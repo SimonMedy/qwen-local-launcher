@@ -7,12 +7,7 @@ powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\c
 set "SETUP_EXIT=%ERRORLEVEL%"
 if not "%SETUP_EXIT%"=="0" (
     echo.
-    if "%SETUP_EXIT%"=="2" (
-        echo Setup cancelled.
-    ) else (
-        echo Qwen Local Launcher setup failed with exit code %SETUP_EXIT%.
-        pause
-    )
+    if "%SETUP_EXIT%"=="2" (echo Setup cancelled.) else (echo Qwen Local Launcher setup failed with exit code %SETUP_EXIT%. & pause)
     exit /b %SETUP_EXIT%
 )
 
@@ -24,5 +19,5 @@ if errorlevel 1 (
     exit /b 1
 )
 
-start "" "%ROOT%Qwen Local Launcher.exe"
+start "" "%ROOT%dist\Qwen Local Launcher.exe"
 exit /b 0

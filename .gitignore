@@ -8,5 +8,5 @@ llama.cpp/
 *.log
 .DS_Store
 Thumbs.db
-Qwen Local Launcher.exe
+dist/
 assets/QwenLocalLauncher.ico

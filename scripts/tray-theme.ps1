@@ -3,7 +3,7 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 if (-not ('QwenMenuRenderer' -as [type])) {
-    Add-Type -TypeDefinition @"
+    Add-Type -ReferencedAssemblies @('System.Drawing.dll','System.Windows.Forms.dll') -TypeDefinition @"
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -22,14 +22,8 @@ public sealed class QwenMenuRenderer : ToolStripProfessionalRenderer
         RoundedEdges = false;
     }
 
-    protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
-    {
-        e.Graphics.Clear(Surface);
-    }
-
-    protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
-    {
-    }
+    protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e) { e.Graphics.Clear(Surface); }
+    protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e) { }
 
     protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
     {
@@ -54,12 +48,9 @@ public sealed class QwenMenuRenderer : ToolStripProfessionalRenderer
 
     protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
     {
-        if (Equals(e.Item.Tag, "qwen-header"))
-            e.TextColor = Text;
-        else if (Equals(e.Item.Tag, "qwen-subtle"))
-            e.TextColor = Muted;
-        else
-            e.TextColor = e.Item.Enabled ? Text : Color.FromArgb(114, 118, 125);
+        if (Equals(e.Item.Tag, "qwen-header")) e.TextColor = Text;
+        else if (Equals(e.Item.Tag, "qwen-subtle")) e.TextColor = Muted;
+        else e.TextColor = e.Item.Enabled ? Text : Color.FromArgb(114, 118, 125);
         base.OnRenderItemText(e);
     }
 
@@ -86,12 +77,8 @@ public sealed class QwenMenuRenderer : ToolStripProfessionalRenderer
 
 function Set-QwenRoundedRegion {
     param([Parameter(Mandatory)][System.Windows.Forms.ContextMenuStrip]$Menu)
-
     if ($Menu.Width -lt 2 -or $Menu.Height -lt 2) { return }
-    $radius = 12
-    $d = $radius * 2
-    $w = $Menu.Width
-    $h = $Menu.Height
+    $radius = 12; $d = $radius * 2; $w = $Menu.Width; $h = $Menu.Height
     $path = New-Object System.Drawing.Drawing2D.GraphicsPath
     try {
         $path.AddArc(0, 0, $d, $d, 180, 90)
@@ -101,14 +88,11 @@ function Set-QwenRoundedRegion {
         $path.CloseFigure()
         if ($Menu.Region) { $Menu.Region.Dispose() }
         $Menu.Region = New-Object System.Drawing.Region($path)
-    } finally {
-        $path.Dispose()
-    }
+    } finally { $path.Dispose() }
 }
 
 function Set-QwenMenuTheme {
     param([Parameter(Mandatory)][System.Windows.Forms.ContextMenuStrip]$Menu)
-
     $Menu.Renderer = New-Object QwenMenuRenderer
     $Menu.BackColor = [System.Drawing.Color]::FromArgb(31, 32, 35)
     $Menu.ForeColor = [System.Drawing.Color]::FromArgb(242, 243, 245)
@@ -130,48 +114,30 @@ function Set-QwenMenuTheme {
         $Menu.Items[1].Font = New-Object System.Drawing.Font('Segoe UI', 9)
         $Menu.Items[1].Padding = New-Object System.Windows.Forms.Padding(10, 0, 10, 7)
     }
-
     foreach ($item in $Menu.Items) {
-        if ($item -is [System.Windows.Forms.ToolStripSeparator]) {
-            $item.Margin = New-Object System.Windows.Forms.Padding(0, 5, 0, 5)
-            continue
-        }
-        if (-not $item.Tag) {
-            $item.Padding = New-Object System.Windows.Forms.Padding(10, 6, 10, 6)
-        }
+        if ($item -is [System.Windows.Forms.ToolStripSeparator]) { $item.Margin = New-Object System.Windows.Forms.Padding(0, 5, 0, 5); continue }
+        if (-not $item.Tag) { $item.Padding = New-Object System.Windows.Forms.Padding(10, 6, 10, 6) }
         if ($item -is [System.Windows.Forms.ToolStripMenuItem] -and $item.HasDropDownItems) {
             $item.DropDown.Renderer = $Menu.Renderer
             $item.DropDown.BackColor = $Menu.BackColor
             $item.DropDown.ForeColor = $Menu.ForeColor
             $item.DropDown.Padding = New-Object System.Windows.Forms.Padding(8, 8, 8, 8)
             $item.DropDown.Font = $Menu.Font
-            foreach ($sub in $item.DropDownItems) {
-                if ($sub -isnot [System.Windows.Forms.ToolStripSeparator]) {
-                    $sub.Padding = New-Object System.Windows.Forms.Padding(10, 6, 10, 6)
-                }
-            }
+            foreach ($sub in $item.DropDownItems) { if ($sub -isnot [System.Windows.Forms.ToolStripSeparator]) { $sub.Padding = New-Object System.Windows.Forms.Padding(10, 6, 10, 6) } }
         }
     }
 
     $startup = $Menu.Items | Where-Object { $_ -is [System.Windows.Forms.ToolStripMenuItem] -and $_.Text -in @('Start with Windows','Launch at Windows startup','Launch at Windows startup  ✓') } | Select-Object -First 1
-    if ($startup) {
-        $startup.ToolTipText = 'Launches the tray app when you sign in to Windows. It does not start the model automatically.'
-    }
-
+    if ($startup) { $startup.ToolTipText = 'Launches the tray app when you sign in to Windows. It does not start the model automatically.' }
     $change = $Menu.Items | Where-Object { $_ -is [System.Windows.Forms.ToolStripMenuItem] -and $_.Text -eq 'Change llama.cpp...' } | Select-Object -First 1
-    if ($change) {
-        $change.ToolTipText = 'Switch llama-server.exe without editing config files.'
-    }
+    if ($change) { $change.ToolTipText = 'Switch llama-server.exe without editing config files.' }
 
     $Menu.add_Opening({
         $startupItem = $this.Items | Where-Object { $_ -is [System.Windows.Forms.ToolStripMenuItem] -and $_.Text -match '^(Start with Windows|Launch at Windows startup)' } | Select-Object -First 1
-        if ($startupItem) {
-            $startupItem.Text = if ($startupItem.Checked) { 'Launch at Windows startup  ✓' } else { 'Launch at Windows startup' }
-        }
+        if ($startupItem) { $startupItem.Text = if ($startupItem.Checked) { 'Launch at Windows startup  ✓' } else { 'Launch at Windows startup' } }
         Set-QwenRoundedRegion -Menu $this
     })
     $Menu.add_SizeChanged({ Set-QwenRoundedRegion -Menu $this })
-
     Set-QwenRoundedRegion -Menu $Menu
 }
 
