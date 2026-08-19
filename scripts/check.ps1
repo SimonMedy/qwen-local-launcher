@@ -40,4 +40,8 @@ $tray = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-app.ps1') -Raw
 if ($tray -notmatch 'Change llama\.cpp\.\.\.') { throw 'Tray menu must expose Change llama.cpp...' }
 if ($tray -notmatch 'Reload-LauncherConfig') { throw 'Tray app must reload local configuration after changing llama.cpp.' }
 
+$setup = Get-Content -LiteralPath (Join-Path $root 'scripts\configure-llama.ps1') -Raw
+if ($setup -match '\.Controls\.Addd\(') { throw 'Setup contains an invalid WinForms Controls.Addd call.' }
+if ($setup -notmatch '\.Controls\.Add\(\$save\)') { throw 'Setup must add the Save button to the form.' }
+
 Write-Host 'Static checks passed.'
