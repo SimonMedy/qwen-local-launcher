@@ -18,3 +18,6 @@ jobs:
       - name: Static checks
         shell: powershell
         run: .\scripts\check.ps1
+      - name: Build Windows launcher executable
+        shell: powershell
+        run: .\scripts\build-launcher.ps1 -OutputPath "$env:RUNNER_TEMP\Qwen Local Launcher.exe" -NoShortcuts
