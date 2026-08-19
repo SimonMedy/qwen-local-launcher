@@ -9,17 +9,6 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 
-if (-not ('QwenBuildNativeIcon' -as [type])) {
-    Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
-public static class QwenBuildNativeIcon {
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    public static extern bool DestroyIcon(IntPtr handle);
-}
-"@
-}
-
 $root = Split-Path -Parent $PSScriptRoot
 $dist = Join-Path $root 'dist'
 $assets = Join-Path $root 'assets'
@@ -30,7 +19,7 @@ $source = Join-Path $root 'launcher\QwenLocalLauncher.cs'
 $iconSource = Join-Path $assets 'QwenLocalLauncher.png'
 $iconPath = Join-Path $assets 'QwenLocalLauncher.ico'
 
-function Convert-PngToLauncherIcon {
+function Convert-PngToMultiSizeIcon {
     param(
         [Parameter(Mandatory)][string]$PngPath,
         [Parameter(Mandatory)][string]$IconPath
@@ -46,30 +35,58 @@ function Convert-PngToLauncherIcon {
             throw "Launcher icon source must be at least 256x256. Current size: $($sourceImage.Width)x$($sourceImage.Height)."
         }
 
-        $bitmap = New-Object System.Drawing.Bitmap 256, 256, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-        $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-        try {
-            $graphics.Clear([System.Drawing.Color]::Transparent)
-            $graphics.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
-            $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-            $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
-            $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-            $graphics.DrawImage($sourceImage, 0, 0, 256, 256)
+        $sizes = @(16, 20, 24, 32, 40, 48, 64, 128, 256)
+        $images = New-Object System.Collections.Generic.List[byte[]]
 
-            $handle = $bitmap.GetHicon()
+        foreach ($size in $sizes) {
+            $bitmap = New-Object System.Drawing.Bitmap $size, $size, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
             try {
-                $temporary = [System.Drawing.Icon]::FromHandle($handle)
-                $icon = $temporary.Clone()
+                $graphics.Clear([System.Drawing.Color]::Transparent)
+                $graphics.CompositingMode = [System.Drawing.Drawing2D.CompositingMode]::SourceCopy
+                $graphics.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
+                $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+                $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+                $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+                $graphics.DrawImage($sourceImage, 0, 0, $size, $size)
+
+                $stream = New-Object IO.MemoryStream
                 try {
-                    $stream = [IO.File]::Create($IconPath)
-                    try { $icon.Save($stream) } finally { $stream.Dispose() }
-                } finally { $icon.Dispose() }
+                    $bitmap.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png)
+                    $images.Add($stream.ToArray())
+                } finally { $stream.Dispose() }
             } finally {
-                [QwenBuildNativeIcon]::DestroyIcon($handle) | Out-Null
+                $graphics.Dispose()
+                $bitmap.Dispose()
             }
+        }
+
+        $file = [IO.File]::Create($IconPath)
+        $writer = New-Object IO.BinaryWriter($file)
+        try {
+            $writer.Write([uint16]0)
+            $writer.Write([uint16]1)
+            $writer.Write([uint16]$sizes.Count)
+
+            $offset = 6 + (16 * $sizes.Count)
+            for ($i = 0; $i -lt $sizes.Count; $i++) {
+                $size = $sizes[$i]
+                $payload = $images[$i]
+                $writer.Write([byte](if ($size -eq 256) { 0 } else { $size }))
+                $writer.Write([byte](if ($size -eq 256) { 0 } else { $size }))
+                $writer.Write([byte]0)
+                $writer.Write([byte]0)
+                $writer.Write([uint16]1)
+                $writer.Write([uint16]32)
+                $writer.Write([uint32]$payload.Length)
+                $writer.Write([uint32]$offset)
+                $offset += $payload.Length
+            }
+
+            foreach ($payload in $images) { $writer.Write($payload) }
         } finally {
-            $graphics.Dispose()
-            $bitmap.Dispose()
+            $writer.Dispose()
+            $file.Dispose()
         }
     } finally {
         $sourceImage.Dispose()
@@ -107,7 +124,7 @@ function New-Shortcut {
 }
 
 if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Launcher source not found: $source" }
-Convert-PngToLauncherIcon -PngPath $iconSource -IconPath $iconPath
+Convert-PngToMultiSizeIcon -PngPath $iconSource -IconPath $iconPath
 
 $csc = Find-CSharpCompiler
 $args = @(
@@ -133,5 +150,5 @@ if (-not $NoShortcuts) {
 }
 
 Write-Host "Launcher built: $OutputPath" -ForegroundColor Green
-Write-Host "Icon source: $iconSource" -ForegroundColor DarkGray
+Write-Host "Multi-size icon built: $iconPath" -ForegroundColor Green
 if (-not $NoShortcuts) { Write-Host 'Desktop and Start Menu shortcuts installed.' -ForegroundColor Green }

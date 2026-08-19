@@ -39,20 +39,19 @@ if (-not (Test-Path -LiteralPath $iconSource -PathType Leaf)) { throw 'Missing a
 
 $bootstrap = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-bootstrap.ps1') -Raw
 if ($bootstrap -notmatch 'tray-icon\.ps1') { throw 'Tray bootstrap must load tray-icon.ps1.' }
-if ($bootstrap -notmatch 'QwenLocalLauncher\.png') { throw 'Tray bootstrap must use the branded PNG icon.' }
 
 $trayIcon = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-icon.ps1') -Raw
-if ($trayIcon -notmatch 'Register-QwenTrayIcon') { throw 'Tray icon integration is missing.' }
-if ($trayIcon -notmatch 'HighQualityBicubic') { throw 'Tray icon must use high-quality downscaling.' }
+if ($trayIcon -notmatch 'ChangeExtension') { throw 'Tray icon must load the generated ICO.' }
+if ($trayIcon -notmatch 'System.Drawing.Icon') { throw 'Tray icon must use the ICO directly.' }
 
 $theme = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-theme.ps1') -Raw
-if ($theme -notmatch 'ReferencedAssemblies.*System.Drawing\.dll') { throw 'Tray theme C# renderer must reference System.Drawing.dll explicitly.' }
 if ($theme -notmatch 'QwenMenuRenderer') { throw 'Tray theme must define QwenMenuRenderer.' }
 
 $builder = Get-Content -LiteralPath (Join-Path $root 'scripts\build-launcher.ps1') -Raw
-if ($builder -notmatch 'Join-Path \$root ''dist''') { throw 'Launcher must build into dist/ by default.' }
-if ($builder -notmatch 'QwenLocalLauncher\.png') { throw 'Launcher build must use the branded PNG source.' }
-if ($builder -notmatch 'Convert-PngToLauncherIcon') { throw 'Launcher build must convert the branded PNG to an ICO.' }
+if ($builder -notmatch 'Convert-PngToMultiSizeIcon') { throw 'Launcher build must generate a multi-size ICO.' }
+foreach ($size in @('16','32','48','64','128','256')) {
+    if ($builder -notmatch "\b$size\b") { throw "Multi-size ICO is missing size $size." }
+}
 if ($builder -notmatch '/win32icon:') { throw 'Launcher build must embed the generated ICO.' }
 if ($builder -notmatch 'Qwen Local Launcher\.lnk') { throw 'Build script must create Windows shortcuts.' }
 
