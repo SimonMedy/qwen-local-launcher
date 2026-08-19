@@ -50,7 +50,7 @@ if ($theme -notmatch 'ReferencedAssemblies.*System.Drawing\.dll') { throw 'Tray 
 if ($theme -notmatch 'QwenMenuRenderer') { throw 'Tray theme must define QwenMenuRenderer.' }
 
 $builder = Get-Content -LiteralPath (Join-Path $root 'scripts\build-launcher.ps1') -Raw
-if ($builder -notmatch "Join-Path \$root 'dist'") { throw 'Launcher must build into dist/ by default.' }
+if ($builder -notmatch 'Join-Path \$root ''dist''') { throw 'Launcher must build into dist/ by default.' }
 if ($builder -notmatch 'QwenLocalLauncher\.png') { throw 'Launcher build must use the branded PNG source.' }
 if ($builder -notmatch 'Convert-PngToLauncherIcon') { throw 'Launcher build must convert the branded PNG to an ICO.' }
 if ($builder -notmatch '/win32icon:') { throw 'Launcher build must embed the generated ICO.' }
