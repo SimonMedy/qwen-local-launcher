@@ -5,6 +5,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $files = @(
     (Join-Path $root 'scripts\tray-launcher.ps1'),
+    (Join-Path $root 'scripts\configure-llama.ps1'),
     (Join-Path $root 'scripts\check.ps1')
 )
 
@@ -29,5 +30,8 @@ foreach ($name in $config.Profiles.Keys) {
     if ($args -notcontains '-hf') { throw "Profile '$name' must specify a Hugging Face model." }
     if ($args -notcontains '-c') { throw "Profile '$name' must specify context size." }
 }
+
+$launcher = Get-Content -LiteralPath (Join-Path $root 'scripts\launch-hidden.vbs') -Raw
+if ($launcher -notmatch 'configure-llama\.ps1') { throw 'First-run launcher must invoke configure-llama.ps1.' }
 
 Write-Host 'Static checks passed.'
