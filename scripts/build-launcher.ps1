@@ -72,8 +72,9 @@ function Convert-PngToMultiSizeIcon {
             for ($i = 0; $i -lt $sizes.Count; $i++) {
                 $size = $sizes[$i]
                 $payload = $images[$i]
-                $writer.Write([byte](if ($size -eq 256) { 0 } else { $size }))
-                $writer.Write([byte](if ($size -eq 256) { 0 } else { $size }))
+                if ($size -eq 256) { $dimension = [byte]0 } else { $dimension = [byte]$size }
+                $writer.Write($dimension)
+                $writer.Write($dimension)
                 $writer.Write([byte]0)
                 $writer.Write([byte]0)
                 $writer.Write([uint16]1)
@@ -86,7 +87,6 @@ function Convert-PngToMultiSizeIcon {
             foreach ($payload in $images) { $writer.Write($payload) }
         } finally {
             $writer.Dispose()
-            $file.Dispose()
         }
     } finally {
         $sourceImage.Dispose()
