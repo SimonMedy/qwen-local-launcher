@@ -18,4 +18,16 @@ foreach ($file in $files) {
 }
 
 $config = Import-PowerShellDataFile -LiteralPath (Join-Path $root 'config\profiles.psd1')
-$requiredProfiles = @('Stable 160k','MTP 160k
+$requiredProfiles = @('Stable 160k','MTP 160k','Stable 180k')
+foreach ($name in $requiredProfiles) {
+    if (-not $config.Profiles.Contains($name)) { throw "Missing required profile: $name" }
+}
+
+foreach ($name in $config.Profiles.Keys) {
+    $args = @($config.Profiles[$name])
+    if ($args -contains '--no-mmproj') { throw "Profile '$name' disables multimodal support." }
+    if ($args -notcontains '-hf') { throw "Profile '$name' must specify a Hugging Face model." }
+    if ($args -notcontains '-c') { throw "Profile '$name' must specify context size." }
+}
+
+Write-Host 'Static checks passed.'
