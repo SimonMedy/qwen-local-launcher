@@ -9,6 +9,8 @@ $logDir = Join-Path (Split-Path -Parent $PSScriptRoot) 'logs'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
 try {
+    . (Join-Path $PSScriptRoot 'tray-theme.ps1')
+    Register-QwenTrayTheme
     . (Join-Path $PSScriptRoot 'tray-app.ps1')
 } catch {
     $message = $_ | Out-String

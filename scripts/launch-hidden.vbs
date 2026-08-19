@@ -3,7 +3,7 @@ Dim shell, fso, root, trayScript, setupScript, localConfig, command, setupResult
 Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 root = fso.GetParentFolderName(fso.GetParentFolderName(WScript.ScriptFullName))
-trayScript = fso.BuildPath(root, "scripts\tray-bootstrap.ps1")
+trayScript = fso.BuildPath(root, "scripts\tray-launcher.ps1")
 setupScript = fso.BuildPath(root, "scripts\configure-llama.ps1")
 localConfig = fso.BuildPath(root, "config\local.psd1")
 

@@ -25,37 +25,6 @@ function Get-ConfiguredPath {
     return $null
 }
 
-function Invoke-NativeProbe {
-    param(
-        [Parameter(Mandatory)][string]$FilePath,
-        [Parameter(Mandatory)][string]$Arguments
-    )
-
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $FilePath
-    $psi.Arguments = $Arguments
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $true
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-
-    $process = New-Object System.Diagnostics.Process
-    $process.StartInfo = $psi
-    try {
-        if (-not $process.Start()) { throw 'Process.Start returned false.' }
-        $stdout = $process.StandardOutput.ReadToEnd()
-        $stderr = $process.StandardError.ReadToEnd()
-        $process.WaitForExit()
-        $combined = @($stdout.Trim(), $stderr.Trim()) | Where-Object { $_ } | Select-Object -Unique
-        return [pscustomobject]@{
-            ExitCode = $process.ExitCode
-            Output = ($combined -join "`r`n").Trim()
-        }
-    } finally {
-        $process.Dispose()
-    }
-}
-
 function Test-LlamaServer {
     param([Parameter(Mandatory)][string]$Path)
 
@@ -64,24 +33,17 @@ function Test-LlamaServer {
     }
 
     try {
-        $versionProbe = Invoke-NativeProbe -FilePath $Path -Arguments '--version'
-        if ($versionProbe.ExitCode -ne 0) {
-            throw "llama-server --version exited with code $($versionProbe.ExitCode).`r`n$($versionProbe.Output)"
-        }
+        $version = (& $Path --version 2>&1 | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0) { throw "llama-server --version exited with code $LASTEXITCODE." }
 
-        $deviceProbe = Invoke-NativeProbe -FilePath $Path -Arguments '--list-devices'
-        if ($deviceProbe.ExitCode -ne 0) {
-            throw "llama-server --list-devices exited with code $($deviceProbe.ExitCode).`r`n$($deviceProbe.Output)"
-        }
-
-        $devices = $deviceProbe.Output
+        $devices = (& $Path --list-devices 2>&1 | Out-String).Trim()
         $gpuReady = $devices -match '(?im)^\s+\S+\d*:' -and $devices -notmatch '(?im)^\s*\(none\)\s*$'
         $status = if ($gpuReady) { 'GPU detected' } else { 'No GPU detected' }
 
         return [pscustomobject]@{
             Valid = $true
             GpuReady = $gpuReady
-            Details = "$($versionProbe.Output)`r`n`r`n$status`r`n$devices"
+            Details = "$version`r`n`r`n$status`r`n$devices"
         }
     } catch {
         return [pscustomobject]@{
@@ -103,164 +65,150 @@ function Save-LlamaServerPath {
     [IO.File]::WriteAllText($localConfigPath, $content, $encoding)
 }
 
-try {
-    $existing = Get-ConfiguredPath
-    if ($FirstRun -and $existing) { exit 0 }
+$existing = Get-ConfiguredPath
+if ($FirstRun -and $existing) { exit 0 }
 
-    [System.Windows.Forms.Application]::EnableVisualStyles()
+[System.Windows.Forms.Application]::EnableVisualStyles()
 
-    $form = New-Object System.Windows.Forms.Form
-    $form.Text = 'Qwen Local Launcher - llama.cpp setup'
-    $form.StartPosition = 'CenterScreen'
-    $form.ClientSize = New-Object System.Drawing.Size(720, 390)
-    $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
-    $form.MaximizeBox = $false
-    $form.MinimizeBox = $false
-    $form.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+$form = New-Object System.Windows.Forms.Form
+$form.Text = 'Qwen Local Launcher - llama.cpp setup'
+$form.StartPosition = 'CenterScreen'
+$form.ClientSize = New-Object System.Drawing.Size(720, 390)
+$form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
+$form.MaximizeBox = $false
+$form.MinimizeBox = $false
+$form.Font = New-Object System.Drawing.Font('Segoe UI', 10)
 
-    $title = New-Object System.Windows.Forms.Label
-    $title.Text = 'Select your llama.cpp server'
-    $title.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 17)
-    $title.AutoSize = $true
-    $title.Location = New-Object System.Drawing.Point(24, 22)
-    $form.Controls.Add($title)
+$title = New-Object System.Windows.Forms.Label
+$title.Text = 'Select your llama.cpp server'
+$title.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 17)
+$title.AutoSize = $true
+$title.Location = New-Object System.Drawing.Point(24, 22)
+$form.Controls.Add($title)
 
-    $subtitle = New-Object System.Windows.Forms.Label
-    $subtitle.Text = 'Choose llama-server.exe from your llama.cpp build. The launcher will remember this path for this PC.'
-    $subtitle.AutoSize = $true
-    $subtitle.Location = New-Object System.Drawing.Point(27, 62)
-    $form.Controls.Add($subtitle)
+$subtitle = New-Object System.Windows.Forms.Label
+$subtitle.Text = 'Choose llama-server.exe from your llama.cpp build. The launcher will remember this path for this PC.'
+$subtitle.AutoSize = $true
+$subtitle.Location = New-Object System.Drawing.Point(27, 62)
+$form.Controls.Add($subtitle)
 
-    $pathBox = New-Object System.Windows.Forms.TextBox
-    $pathBox.Location = New-Object System.Drawing.Point(28, 102)
-    $pathBox.Size = New-Object System.Drawing.Size(555, 27)
-    if ($existing) { $pathBox.Text = $existing }
-    $form.Controls.Add($pathBox)
+$pathBox = New-Object System.Windows.Forms.TextBox
+$pathBox.Location = New-Object System.Drawing.Point(28, 102)
+$pathBox.Size = New-Object System.Drawing.Size(555, 27)
+if ($existing) { $pathBox.Text = $existing }
+$form.Controls.Add($pathBox)
 
-    $browse = New-Object System.Windows.Forms.Button
-    $browse.Text = 'Browse...'
-    $browse.Location = New-Object System.Drawing.Point(596, 99)
-    $browse.Size = New-Object System.Drawing.Size(96, 32)
-    $form.Controls.Add($browse)
+$browse = New-Object System.Windows.Forms.Button
+$browse.Text = 'Browse...'
+$browse.Location = New-Object System.Drawing.Point(596, 99)
+$browse.Size = New-Object System.Drawing.Size(96, 32)
+$form.Controls.Add($browse)
 
-    $status = New-Object System.Windows.Forms.Label
-    $status.Text = 'Select llama-server.exe, then verify it.'
-    $status.AutoSize = $true
-    $status.Location = New-Object System.Drawing.Point(28, 148)
-    $form.Controls.Add($status)
+$status = New-Object System.Windows.Forms.Label
+$status.Text = 'Select llama-server.exe, then verify it.'
+$status.AutoSize = $true
+$status.Location = New-Object System.Drawing.Point(28, 148)
+$form.Controls.Add($status)
 
-    $details = New-Object System.Windows.Forms.TextBox
-    $details.Location = New-Object System.Drawing.Point(28, 178)
-    $details.Size = New-Object System.Drawing.Size(664, 130)
-    $details.Multiline = $true
-    $details.ReadOnly = $true
-    $details.ScrollBars = [System.Windows.Forms.ScrollBars]::Vertical
-    $form.Controls.Add($details)
+$details = New-Object System.Windows.Forms.TextBox
+$details.Location = New-Object System.Drawing.Point(28, 178)
+$details.Size = New-Object System.Drawing.Size(664, 130)
+$details.Multiline = $true
+$details.ReadOnly = $true
+$details.ScrollBars = [System.Windows.Forms.ScrollBars]::Vertical
+$form.Controls.Add($details)
 
-    $verify = New-Object System.Windows.Forms.Button
-    $verify.Text = 'Verify'
-    $verify.Location = New-Object System.Drawing.Point(28, 330)
-    $verify.Size = New-Object System.Drawing.Size(96, 34)
-    $form.Controls.Add($verify)
+$verify = New-Object System.Windows.Forms.Button
+$verify.Text = 'Verify'
+$verify.Location = New-Object System.Drawing.Point(28, 330)
+$verify.Size = New-Object System.Drawing.Size(96, 34)
+$form.Controls.Add($verify)
 
-    $cancel = New-Object System.Windows.Forms.Button
-    $cancel.Text = 'Cancel'
-    $cancel.Location = New-Object System.Drawing.Point(484, 330)
-    $cancel.Size = New-Object System.Drawing.Size(96, 34)
-    $cancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
-    $form.Controls.Add($cancel)
+$cancel = New-Object System.Windows.Forms.Button
+$cancel.Text = 'Cancel'
+$cancel.Location = New-Object System.Drawing.Point(484, 330)
+$cancel.Size = New-Object System.Drawing.Size(96, 34)
+$cancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+$form.Controls.Add($cancel)
 
-    $save = New-Object System.Windows.Forms.Button
-    $save.Text = 'Save'
-    $save.Location = New-Object System.Drawing.Point(596, 330)
-    $save.Size = New-Object System.Drawing.Size(96, 34)
+$save = New-Object System.Windows.Forms.Button
+$save.Text = 'Save'
+$save.Location = New-Object System.Drawing.Point(596, 330)
+$save.Size = New-Object System.Drawing.Size(96, 34)
+$save.Enabled = $false
+$form.Controls.Addd($save)
+
+$form.AcceptButton = $save
+$form.CancelButton = $cancel
+$script:VerifiedPath = $null
+
+function Verify-Selection {
+    $candidate = $pathBox.Text.Trim()
     $save.Enabled = $false
-    $form.Controls.Add($save)
-
-    $form.AcceptButton = $save
-    $form.CancelButton = $cancel
     $script:VerifiedPath = $null
 
-    function Verify-Selection {
-        $candidate = $pathBox.Text.Trim()
-        $save.Enabled = $false
-        $script:VerifiedPath = $null
-
-        if (-not $candidate) {
-            $status.Text = 'Choose llama-server.exe first.'
-            $details.Text = ''
-            return
-        }
-
-        $status.Text = 'Verifying...'
-        $form.Refresh()
-
-        $result = Test-LlamaServer -Path $candidate
-        $details.Text = $result.Details
-
-        if ($result.Valid) {
-            $script:VerifiedPath = (Resolve-Path -LiteralPath $candidate).Path
-            $save.Enabled = $true
-            $status.Text = if ($result.GpuReady) { 'Ready - GPU detected.' } else { 'Valid llama-server.exe - no GPU detected.' }
-        } else {
-            $status.Text = 'This executable could not be validated.'
-        }
+    if (-not $candidate) {
+        $status.Text = 'Choose llama-server.exe first.'
+        $details.Text = ''
+        return
     }
 
-    $browse.add_Click({
-        $dialog = New-Object System.Windows.Forms.OpenFileDialog
-        $dialog.Title = 'Select llama-server.exe'
-        $dialog.Filter = 'llama-server.exe|llama-server.exe|Executable files (*.exe)|*.exe'
-        $dialog.CheckFileExists = $true
+    $status.Text = 'Verifying...'
+    $form.Refresh()
 
-        if ($pathBox.Text) {
-            try {
-                $parent = Split-Path -Parent $pathBox.Text
-                if (Test-Path -LiteralPath $parent -PathType Container) { $dialog.InitialDirectory = $parent }
-            } catch {}
-        }
+    $result = Test-LlamaServer -Path $candidate
+    $details.Text = $result.Details
 
-        if ($dialog.ShowDialog($form) -eq [System.Windows.Forms.DialogResult]::OK) {
-            $pathBox.Text = $dialog.FileName
-            Verify-Selection
-        }
-        $dialog.Dispose()
-    })
-
-    $verify.add_Click({ Verify-Selection })
-
-    $pathBox.add_TextChanged({
-        if ($script:VerifiedPath -and $pathBox.Text -ne $script:VerifiedPath) {
-            $script:VerifiedPath = $null
-            $save.Enabled = $false
-            $status.Text = 'Path changed - verify again.'
-        }
-    })
-
-    $save.add_Click({
-        if (-not $script:VerifiedPath) { return }
-        Save-LlamaServerPath -Path $script:VerifiedPath
-        $form.DialogResult = [System.Windows.Forms.DialogResult]::OK
-        $form.Close()
-    })
-
-    if ($existing) { Verify-Selection }
-
-    $result = $form.ShowDialog()
-    $form.Dispose()
-
-    if ($result -eq [System.Windows.Forms.DialogResult]::OK) { exit 0 }
-    exit 2
-} catch {
-    $message = $_.Exception.Message
-    try {
-        [System.Windows.Forms.MessageBox]::Show(
-            "Qwen Local Launcher setup failed:`r`n`r`n$message",
-            'Qwen Local Launcher - Setup Error',
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error
-        ) | Out-Null
-    } catch {}
-    Write-Error $message
-    exit 1
+    if ($result.Valid) {
+        $script:VerifiedPath = (Resolve-Path -LiteralPath $candidate).Path
+        $save.Enabled = $true
+        $status.Text = if ($result.GpuReady) { 'Ready - GPU detected.' } else { 'Valid llama-server.exe - no GPU detected.' }
+    } else {
+        $status.Text = 'This executable could not be validated.'
+    }
 }
+
+$browse.add_Click({
+    $dialog = New-Object System.Windows.Forms.OpenFileDialog
+    $dialog.Title = 'Select llama-server.exe'
+    $dialog.Filter = 'llama-server.exe|llama-server.exe|Executable files (*.exe)|*.exe'
+    $dialog.CheckFileExists = $true
+
+    if ($pathBox.Text) {
+        try {
+            $parent = Split-Path -Parent $pathBox.Text
+            if (Test-Path -LiteralPath $parent -PathType Container) { $dialog.InitialDirectory = $parent }
+        } catch {}
+    }
+
+    if ($dialog.ShowDialog($form) -eq [System.Windows.Forms.DialogResult]::OK) {
+        $pathBox.Text = $dialog.FileName
+        Verify-Selection
+    }
+    $dialog.Dispose()
+})
+
+$verify.add_Click({ Verify-Selection })
+
+$pathBox.add_TextChanged({
+    if ($script:VerifiedPath -and $pathBox.Text -ne $script:VerifiedPath) {
+        $script:VerifiedPath = $null
+        $save.Enabled = $false
+        $status.Text = 'Path changed - verify again.'
+    }
+})
+
+$save.add_Click({
+    if (-not $script:VerifiedPath) { return }
+    Save-LlamaServerPath -Path $script:VerifiedPath
+    $form.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $form.Close()
+})
+
+if ($existing) { Verify-Selection }
+
+$result = $form.ShowDialog()
+$form.Dispose()
+
+if ($result -eq [System.Windows.Forms.DialogResult]::OK) { exit 0 }
+exit 2
