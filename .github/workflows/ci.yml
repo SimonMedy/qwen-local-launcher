@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches-ignore:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  powershell:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Static checks
+        shell: powershell
+        run: .\scripts\check.ps1
