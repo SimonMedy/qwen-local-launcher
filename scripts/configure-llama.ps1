@@ -25,6 +25,37 @@ function Get-ConfiguredPath {
     return $null
 }
 
+function Invoke-NativeProbe {
+    param(
+        [Parameter(Mandatory)][string]$FilePath,
+        [Parameter(Mandatory)][string]$Arguments
+    )
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $FilePath
+    $psi.Arguments = $Arguments
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $psi
+    try {
+        if (-not $process.Start()) { throw 'Process.Start returned false.' }
+        $stdout = $process.StandardOutput.ReadToEnd()
+        $stderr = $process.StandardError.ReadToEnd()
+        $process.WaitForExit()
+        $combined = @($stdout.Trim(), $stderr.Trim()) | Where-Object { $_ } | Select-Object -Unique
+        return [pscustomobject]@{
+            ExitCode = $process.ExitCode
+            Output = ($combined -join "`r`n").Trim()
+        }
+    } finally {
+        $process.Dispose()
+    }
+}
+
 function Test-LlamaServer {
     param([Parameter(Mandatory)][string]$Path)
 
@@ -33,16 +64,24 @@ function Test-LlamaServer {
     }
 
     try {
-        $version = (& $Path --version 2>&1 | Out-String).Trim()
-        if ($LASTEXITCODE -ne 0) { throw "llama-server --version exited with code $LASTEXITCODE." }
-        $devices = (& $Path --list-devices 2>&1 | Out-String).Trim()
+        $versionProbe = Invoke-NativeProbe -FilePath $Path -Arguments '--version'
+        if ($versionProbe.ExitCode -ne 0) {
+            throw "llama-server --version exited with code $($versionProbe.ExitCode).`r`n$($versionProbe.Output)"
+        }
+
+        $deviceProbe = Invoke-NativeProbe -FilePath $Path -Arguments '--list-devices'
+        if ($deviceProbe.ExitCode -ne 0) {
+            throw "llama-server --list-devices exited with code $($deviceProbe.ExitCode).`r`n$($deviceProbe.Output)"
+        }
+
+        $devices = $deviceProbe.Output
         $gpuReady = $devices -match '(?im)^\s+\S+\d*:' -and $devices -notmatch '(?im)^\s*\(none\)\s*$'
         $status = if ($gpuReady) { 'GPU detected' } else { 'No GPU detected' }
 
         return [pscustomobject]@{
             Valid = $true
             GpuReady = $gpuReady
-            Details = "$version`r`n`r`n$status`r`n$devices"
+            Details = "$($versionProbe.Output)`r`n`r`n$status`r`n$devices"
         }
     } catch {
         return [pscustomobject]@{
