@@ -20,12 +20,12 @@ foreach ($name in $config.Profiles.Keys) {
 }
 
 $theme = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-theme.ps1') -Raw
-if ($theme -notmatch "ReferencedAssemblies.*System.Drawing\.dll") { throw 'Tray theme C# renderer must reference System.Drawing.dll explicitly.' }
+if ($theme -notmatch 'ReferencedAssemblies.*System\.Drawing\.dll') { throw 'Tray theme C# renderer must reference System.Drawing.dll explicitly.' }
 if ($theme -notmatch 'QwenMenuRenderer') { throw 'Tray theme must define QwenMenuRenderer.' }
 
 $builder = Get-Content -LiteralPath (Join-Path $root 'scripts\build-launcher.ps1') -Raw
-if ($builder -notmatch "Join-Path \$root 'dist'") { throw 'Launcher must build into dist/ by default.' }
-if ($builder -notmatch '/reference:System.Drawing\.dll') { throw 'Launcher compilation must reference System.Drawing.dll.' }
+if ($builder -notmatch 'Join-Path \$root ''dist''') { throw 'Launcher must build into dist/ by default.' }
+if ($builder -notmatch '/reference:System\.Drawing\.dll') { throw 'Launcher compilation must reference System.Drawing.dll.' }
 if ($builder -notmatch 'Qwen Local Launcher\.lnk') { throw 'Build script must create Windows shortcuts.' }
 
 $source = Get-Content -LiteralPath (Join-Path $root 'launcher\QwenLocalLauncher.cs') -Raw
