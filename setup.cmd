@@ -1,0 +1,6 @@
+@echo off
+setlocal
+set "ROOT=%~dp0"
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\configure-llama.ps1"
+if errorlevel 1 exit /b %errorlevel%
+wscript.exe "%ROOT%scripts\launch-hidden.vbs"
