@@ -5,12 +5,17 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 
 $createdNew = $false
-$logDir = Join-Path (Split-Path -Parent $PSScriptRoot) 'logs'
+$root = Split-Path -Parent $PSScriptRoot
+$logDir = Join-Path $root 'logs'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
 try {
     . (Join-Path $PSScriptRoot 'tray-theme.ps1')
     Register-QwenTrayTheme
+
+    . (Join-Path $PSScriptRoot 'tray-icon.ps1')
+    Register-QwenTrayIcon -PngPath (Join-Path $root 'assets\QwenLocalLauncher.png')
+
     . (Join-Path $PSScriptRoot 'tray-app.ps1')
 } catch {
     $message = $_ | Out-String

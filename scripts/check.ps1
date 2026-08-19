@@ -3,15 +3,30 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
-$files = @((Join-Path $root 'scripts\tray-bootstrap.ps1'),(Join-Path $root 'scripts\tray-theme.ps1'),(Join-Path $root 'scripts\tray-app.ps1'),(Join-Path $root 'scripts\tray-launcher.ps1'),(Join-Path $root 'scripts\configure-llama.ps1'),(Join-Path $root 'scripts\build-launcher.ps1'),(Join-Path $root 'scripts\check.ps1'))
+$files = @(
+    (Join-Path $root 'scripts\tray-bootstrap.ps1'),
+    (Join-Path $root 'scripts\tray-theme.ps1'),
+    (Join-Path $root 'scripts\tray-icon.ps1'),
+    (Join-Path $root 'scripts\tray-app.ps1'),
+    (Join-Path $root 'scripts\tray-launcher.ps1'),
+    (Join-Path $root 'scripts\configure-llama.ps1'),
+    (Join-Path $root 'scripts\build-launcher.ps1'),
+    (Join-Path $root 'scripts\check.ps1')
+)
+
 foreach ($file in $files) {
-    $tokens = $null; $errors = $null
-    [void][System.Management.Automation.Language.Parser]::ParseFile($file,[ref]$tokens,[ref]$errors)
-    if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error "${file}:$($_.Extent.StartLineNumber): $($_.Message)" } }
+    $tokens = $null
+    $errors = $null
+    [void][System.Management.Automation.Language.Parser]::ParseFile($file, [ref]$tokens, [ref]$errors)
+    if ($errors.Count -gt 0) {
+        $errors | ForEach-Object { Write-Error "${file}:$($_.Extent.StartLineNumber): $($_.Message)" }
+    }
 }
 
 $config = Import-PowerShellDataFile -LiteralPath (Join-Path $root 'config\profiles.psd1')
-foreach ($name in @('Stable 160k','MTP 160k','Stable 180k')) { if (-not $config.Profiles.Contains($name)) { throw "Missing required profile: $name" } }
+foreach ($name in @('Stable 160k','MTP 160k','Stable 180k')) {
+    if (-not $config.Profiles.Contains($name)) { throw "Missing required profile: $name" }
+}
 foreach ($name in $config.Profiles.Keys) {
     $args = @($config.Profiles[$name])
     if ($args -contains '--no-mmproj') { throw "Profile '$name' disables multimodal support." }
@@ -19,13 +34,26 @@ foreach ($name in $config.Profiles.Keys) {
     if ($args -notcontains '-c') { throw "Profile '$name' must specify context size." }
 }
 
+$iconSource = Join-Path $root 'assets\QwenLocalLauncher.png'
+if (-not (Test-Path -LiteralPath $iconSource -PathType Leaf)) { throw 'Missing assets/QwenLocalLauncher.png.' }
+
+$bootstrap = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-bootstrap.ps1') -Raw
+if ($bootstrap -notmatch 'tray-icon\.ps1') { throw 'Tray bootstrap must load tray-icon.ps1.' }
+if ($bootstrap -notmatch 'QwenLocalLauncher\.png') { throw 'Tray bootstrap must use the branded PNG icon.' }
+
+$trayIcon = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-icon.ps1') -Raw
+if ($trayIcon -notmatch 'Register-QwenTrayIcon') { throw 'Tray icon integration is missing.' }
+if ($trayIcon -notmatch 'HighQualityBicubic') { throw 'Tray icon must use high-quality downscaling.' }
+
 $theme = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-theme.ps1') -Raw
-if ($theme -notmatch 'ReferencedAssemblies.*System\.Drawing\.dll') { throw 'Tray theme C# renderer must reference System.Drawing.dll explicitly.' }
+if ($theme -notmatch 'ReferencedAssemblies.*System.Drawing\.dll') { throw 'Tray theme C# renderer must reference System.Drawing.dll explicitly.' }
 if ($theme -notmatch 'QwenMenuRenderer') { throw 'Tray theme must define QwenMenuRenderer.' }
 
 $builder = Get-Content -LiteralPath (Join-Path $root 'scripts\build-launcher.ps1') -Raw
 if ($builder -notmatch 'Join-Path \$root ''dist''') { throw 'Launcher must build into dist/ by default.' }
-if ($builder -notmatch '/reference:System\.Drawing\.dll') { throw 'Launcher compilation must reference System.Drawing.dll.' }
+if ($builder -notmatch 'QwenLocalLauncher\.png') { throw 'Launcher build must use the branded PNG source.' }
+if ($builder -notmatch 'Convert-PngToLauncherIcon') { throw 'Launcher build must convert the branded PNG to an ICO.' }
+if ($builder -notmatch '/win32icon:') { throw 'Launcher build must embed the generated ICO.' }
 if ($builder -notmatch 'Qwen Local Launcher\.lnk') { throw 'Build script must create Windows shortcuts.' }
 
 $source = Get-Content -LiteralPath (Join-Path $root 'launcher\QwenLocalLauncher.cs') -Raw
