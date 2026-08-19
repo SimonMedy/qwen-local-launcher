@@ -4,6 +4,7 @@ $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
 $files = @(
+    (Join-Path $root 'scripts\tray-app.ps1'),
     (Join-Path $root 'scripts\tray-launcher.ps1'),
     (Join-Path $root 'scripts\configure-llama.ps1'),
     (Join-Path $root 'scripts\check.ps1')
@@ -33,5 +34,10 @@ foreach ($name in $config.Profiles.Keys) {
 
 $launcher = Get-Content -LiteralPath (Join-Path $root 'scripts\launch-hidden.vbs') -Raw
 if ($launcher -notmatch 'configure-llama\.ps1') { throw 'First-run launcher must invoke configure-llama.ps1.' }
+if ($launcher -notmatch 'tray-app\.ps1') { throw 'Hidden launcher must start tray-app.ps1.' }
+
+$tray = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-app.ps1') -Raw
+if ($tray -notmatch 'Change llama\.cpp\.\.\.') { throw 'Tray menu must expose Change llama.cpp...' }
+if ($tray -notmatch 'Reload-LauncherConfig') { throw 'Tray app must reload local configuration after changing llama.cpp.' }
 
 Write-Host 'Static checks passed.'
