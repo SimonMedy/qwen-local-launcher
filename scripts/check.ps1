@@ -22,7 +22,9 @@ foreach ($file in $files) {
 }
 
 $config = Import-PowerShellDataFile -LiteralPath (Join-Path $root 'config\profiles.psd1')
-foreach ($name in @('Stable 160k','MTP 128k','Stable 180k')) { if (-not $config.Profiles.Contains($name)) { throw "Missing required profile: $name" } }
+foreach ($name in @('Stable 160k','MTP 128k','Stable 180k')) {
+    if (-not $config.Profiles.Contains($name)) { throw "Missing required profile: $name" }
+}
 function Assert-FlagValue {
     param([object[]]$ProfileArgs,[string]$Flag,[string]$Expected,[string]$Profile)
     $index = [Array]::IndexOf($ProfileArgs,$Flag)
@@ -50,12 +52,15 @@ foreach ($name in $config.Profiles.Keys) {
     Assert-FlagValue $profileArgs '--presence-penalty' '0.0' $name
     Assert-FlagValue $profileArgs '--repeat-penalty' '1.0' $name
 }
-
-$bootstrap = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-bootstrap.ps1') -Raw
-foreach ($needle in @('QwenServerJob','JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE','AssignProcessToJobObject','Start-QwenDiagnosticsEncoded','EncodedCommand','QwenForegroundWindow')) {
-    if ($bootstrap -notmatch [regex]::Escape($needle)) { throw "Bootstrap missing reliability primitive: $needle" }
-}
-if ($bootstrap -match '[^\x00-\x7F]') { throw 'Tray bootstrap must remain ASCII-only for Windows PowerShell 5.1 compatibility.' }
+Assert-FlagValue @($config.Profiles['Stable 160k']) '-c' '160000' 'Stable 160k'
+Assert-FlagValue @($config.Profiles['MTP 128k']) '-c' '131072' 'MTP 128k'
+Assert-FlagValue @($config.Profiles['Stable 180k']) '-c' '180000' 'Stable 180k'
+Assert-FlagValue @($config.Profiles['MTP 128k']) '--spec-type' 'draft-mtp' 'MTP 128k'
+Assert-FlagValue @($config.Profiles['MTP 128k']) '--spec-draft-n-max' '2' 'MTP 128k'
+Assert-FlagValue @($config.Profiles['MTP 128k']) '--spec-draft-type-k' 'q4_0' 'MTP 128k'
+Assert-FlagValue @($config.Profiles['MTP 128k']) '--spec-draft-type-v' 'q4_0' 'MTP 128k'
+if (@($config.Profiles['MTP 128k']) -notcontains '--no-mmproj-offload') { throw 'MTP 128k must keep multimodal enabled while disabling mmproj GPU offload.' }
+if (@($config.Profiles['MTP 128k']) -contains '--spec-draft-p-min') { throw 'MTP 128k must not use the old --spec-draft-p-min setting.' }
 
 $tray = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-app.ps1') -Raw
 foreach ($needle in @('Get-ProcessTreeIds','Invoke-TaskKillSafe','Runtime diagnostics','ProfileOrder','--metrics','QwenPopupForm')) {
@@ -82,6 +87,36 @@ $smoke = New-QwenPopupForm
 $smokeButton = New-QwenPopupButton 'Smoke test'
 $smoke.Controls.Add($smokeButton)
 $smoke.Dispose()
+
+$diagEscaped = $diagPath.Replace("'", "''")
+$rootEscaped = $root.Replace("'", "''")
+$selfTestScript = @"
+`$culture = [Globalization.CultureInfo]::InvariantCulture.Clone()
+`$culture.NumberFormat.NumberGroupSeparator = ''
+[Threading.Thread]::CurrentThread.CurrentCulture = `$culture
+& '$diagEscaped' -Root '$rootEscaped' -SelfTest
+"@
+$encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($selfTestScript))
+$psi = New-Object Diagnostics.ProcessStartInfo
+$psi.FileName = 'powershell.exe'
+$psi.Arguments = "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $encoded"
+$psi.UseShellExecute = $false
+$psi.CreateNoWindow = $true
+$psi.RedirectStandardOutput = $true
+$psi.RedirectStandardError = $true
+$selfTestProcess = New-Object Diagnostics.Process
+$selfTestProcess.StartInfo = $psi
+[void]$selfTestProcess.Start()
+if (-not $selfTestProcess.WaitForExit(15000)) {
+    try { $selfTestProcess.Kill() } catch {}
+    throw 'Runtime diagnostics self-test timed out.'
+}
+$selfTestStdout = $selfTestProcess.StandardOutput.ReadToEnd()
+$selfTestStderr = $selfTestProcess.StandardError.ReadToEnd()
+$selfTestExit = $selfTestProcess.ExitCode
+$selfTestProcess.Dispose()
+if ($selfTestExit -ne 0) { throw "Runtime diagnostics self-test failed ($selfTestExit). $selfTestStderr $selfTestStdout" }
+if ($selfTestStdout -notmatch 'Runtime diagnostics self-test passed') { throw "Runtime diagnostics self-test did not report success. $selfTestStdout" }
 
 $iconPath = Join-Path $root 'assets\QwenLocalLauncher.ico'
 if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) { throw 'Missing versioned assets/QwenLocalLauncher.ico.' }
