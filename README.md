@@ -6,17 +6,17 @@ A native-feeling Windows system-tray launcher for running Qwen locally with `lla
 
 ## Current target
 
-The default profiles target `unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL` with a 160k context window, plus experimental MTP and 180k variants. Multimodal support is intentionally preserved: no profile passes `--no-mmproj`.
+The default profiles target `unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL`, with Stable 160k as the default, a lower-context MTP profile to reduce memory pressure, and a Stable 180k variant. Multimodal support is intentionally preserved: no profile passes `--no-mmproj`.
 
 ### Included profiles
 
 | Profile | Context | MTP | KV cache | Threads |
 | --- | ---: | --- | --- | --- |
 | Stable 160k | 160,000 | Off | K `q8_0`, V `q4_0` | `-t 8 -tb 16` |
-| MTP 160k | 160,000 | `draft-mtp`, max 2, p-min 0.8 | K `q8_0`, V `q4_0` | `-t 8 -tb 16` |
+| MTP 128k | 131,072 | `draft-mtp`, max 2, draft K/V `q4_0` | K `q8_0`, V `q4_0` | `-t 8 -tb 16` |
 | Stable 180k | 180,000 | Off | K `q8_0`, V `q4_0` | `-t 8 -tb 16` |
 
-All profiles use `-ngl auto`, `--fit-target 1536`, Flash Attention, `-np 1`, and `--cache-reuse 256`.
+All profiles use `-ngl auto`, Flash Attention, `-np 1`, `--cache-reuse 256`, `--cache-ram 4096`, and the same sampling defaults (`--temp 1.0 --top-p 0.95 --top-k 20 --min-p 0.0 --presence-penalty 0.0 --repeat-penalty 1.0`).
 
 ## Launcher features
 
@@ -45,7 +45,8 @@ All profiles use `-ngl auto`, `--fit-target 1536`, Flash Attention, `-np 1`, and
 3. Click **Browse...** and select that build's `llama-server.exe`.
 4. The launcher verifies the executable and shows the detected devices.
 5. Click **Save**. The path is stored in `config\local.psd1`, which is ignored by Git.
-6. The tray launcher can then start the configured server.
+6. The launcher executable is built to `dist\Qwen Local Launcher.exe`; Desktop and Start Menu shortcuts are created.
+7. The tray launcher can then start the configured server.
 
 Run `setup.cmd` again whenever you want to switch to another `llama.cpp` build, for example Vulkan vs ROCm/HIP.
 
@@ -62,16 +63,9 @@ The location above is only an example. The launcher does not assume any installa
 
 ## Tray behavior
 
-The status icon uses a simple native-drawn Q badge:
-
-- green: Running
-- amber: Starting / health pending
-- gray: Stopped
-- red: Error
-
 Double-click opens the llama.cpp Web UI while running; when stopped it starts the selected profile.
 
-Stopping first asks Windows to terminate the process tree without `/F`, waits for the configured timeout, then falls back to a forced termination only if needed. `Quit` stops the server before removing the tray icon.
+Stopping first asks Windows to terminate the process tree without `/F`, waits for the configured timeout, then falls back to forced termination only if needed. `Quit` stops the server before removing the tray icon.
 
 ## Configuration
 
@@ -88,7 +82,7 @@ Planned comparisons for the target RX 9070 XT setup:
 - `-t 8` vs `-t 16`.
 - `--cache-reuse 256` vs `512`.
 - `-ub 256 / 512 / 1024`.
-- 160k vs 180k context.
+- 128k / 160k / 180k context depending on profile.
 - VRAM/RAM, prompt processing tok/s, generation tok/s, TTFT, MTP acceptance rate, actual GPU layer offload, and multimodal stability.
 
 The initial implementation deliberately keeps Stable 160k as the default and treats MTP as an opt-in profile until it has been benchmarked on the target machine.

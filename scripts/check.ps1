@@ -24,7 +24,7 @@ foreach ($file in $files) {
 }
 
 $config = Import-PowerShellDataFile -LiteralPath (Join-Path $root 'config\profiles.psd1')
-foreach ($name in @('Stable 160k','MTP 160k','Stable 180k')) {
+foreach ($name in @('Stable 160k','MTP 128k','Stable 180k')) {
     if (-not $config.Profiles.Contains($name)) { throw "Missing required profile: $name" }
 }
 
@@ -59,13 +59,13 @@ foreach ($name in $config.Profiles.Keys) {
 }
 
 Assert-FlagValue @($config.Profiles['Stable 160k']) '-c' '160000' 'Stable 160k'
-Assert-FlagValue @($config.Profiles['MTP 160k']) '-c' '160000' 'MTP 160k'
+Assert-FlagValue @($config.Profiles['MTP 128k']) '-c' '131072' 'MTP 128k'
 Assert-FlagValue @($config.Profiles['Stable 180k']) '-c' '180000' 'Stable 180k'
-Assert-FlagValue @($config.Profiles['MTP 160k']) '--spec-type' 'draft-mtp' 'MTP 160k'
-Assert-FlagValue @($config.Profiles['MTP 160k']) '--spec-draft-n-max' '2' 'MTP 160k'
-Assert-FlagValue @($config.Profiles['MTP 160k']) '--spec-draft-type-k' 'q4_0' 'MTP 160k'
-Assert-FlagValue @($config.Profiles['MTP 160k']) '--spec-draft-type-v' 'q4_0' 'MTP 160k'
-if (@($config.Profiles['MTP 160k']) -contains '--spec-draft-p-min') { throw 'MTP 160k must not use the old --spec-draft-p-min setting.' }
+Assert-FlagValue @($config.Profiles['MTP 128k']) '--spec-type' 'draft-mtp' 'MTP 128k'
+Assert-FlagValue @($config.Profiles['MTP 128k']) '--spec-draft-n-max' '2' 'MTP 128k'
+Assert-FlagValue @($config.Profiles['MTP 128k']) '--spec-draft-type-k' 'q4_0' 'MTP 128k'
+Assert-FlagValue @($config.Profiles['MTP 128k']) '--spec-draft-type-v' 'q4_0' 'MTP 128k'
+if (@($config.Profiles['MTP 128k']) -contains '--spec-draft-p-min') { throw 'MTP 128k must not use the old --spec-draft-p-min setting.' }
 
 $iconPath = Join-Path $root 'assets\QwenLocalLauncher.ico'
 if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) { throw 'Missing versioned assets/QwenLocalLauncher.ico.' }
