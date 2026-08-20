@@ -27,32 +27,62 @@ $config = Import-PowerShellDataFile -LiteralPath (Join-Path $root 'config\profil
 foreach ($name in @('Stable 160k','MTP 160k','Stable 180k')) {
     if (-not $config.Profiles.Contains($name)) { throw "Missing required profile: $name" }
 }
-foreach ($name in $config.Profiles.Keys) {
-    $args = @($config.Profiles[$name])
-    if ($args -contains '--no-mmproj') { throw "Profile '$name' disables multimodal support." }
-    if ($args -notcontains '-hf') { throw "Profile '$name' must specify a Hugging Face model." }
-    if ($args -notcontains '-c') { throw "Profile '$name' must specify context size." }
+
+function Assert-FlagValue {
+    param([object[]]$ProfileArgs, [string]$Flag, [string]$Expected, [string]$Profile)
+    $index = [Array]::IndexOf($ProfileArgs, $Flag)
+    if ($index -lt 0 -or $index + 1 -ge $ProfileArgs.Count -or [string]$ProfileArgs[$index + 1] -ne $Expected) {
+        throw "Profile '$Profile' must contain $Flag $Expected."
+    }
 }
 
-$iconSource = Join-Path $root 'assets\QwenLocalLauncher.png'
-if (-not (Test-Path -LiteralPath $iconSource -PathType Leaf)) { throw 'Missing assets/QwenLocalLauncher.png.' }
+foreach ($name in $config.Profiles.Keys) {
+    $profileArgs = @($config.Profiles[$name])
+    if ($profileArgs -contains '--no-mmproj') { throw "Profile '$name' disables multimodal support." }
+    if ($profileArgs -contains '--fit-target') { throw "Profile '$name' must not use --fit-target." }
+    Assert-FlagValue $profileArgs '-hf' 'unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL' $name
+    Assert-FlagValue $profileArgs '-ngl' 'auto' $name
+    Assert-FlagValue $profileArgs '--cache-type-k' 'q8_0' $name
+    Assert-FlagValue $profileArgs '--cache-type-v' 'q4_0' $name
+    Assert-FlagValue $profileArgs '--flash-attn' 'on' $name
+    Assert-FlagValue $profileArgs '-np' '1' $name
+    Assert-FlagValue $profileArgs '--cache-reuse' '256' $name
+    Assert-FlagValue $profileArgs '--cache-ram' '4096' $name
+    Assert-FlagValue $profileArgs '-t' '8' $name
+    Assert-FlagValue $profileArgs '-tb' '16' $name
+    Assert-FlagValue $profileArgs '--temp' '1.0' $name
+    Assert-FlagValue $profileArgs '--top-p' '0.95' $name
+    Assert-FlagValue $profileArgs '--top-k' '20' $name
+    Assert-FlagValue $profileArgs '--min-p' '0.0' $name
+    Assert-FlagValue $profileArgs '--presence-penalty' '0.0' $name
+    Assert-FlagValue $profileArgs '--repeat-penalty' '1.0' $name
+}
+
+Assert-FlagValue @($config.Profiles['Stable 160k']) '-c' '160000' 'Stable 160k'
+Assert-FlagValue @($config.Profiles['MTP 160k']) '-c' '160000' 'MTP 160k'
+Assert-FlagValue @($config.Profiles['Stable 180k']) '-c' '180000' 'Stable 180k'
+Assert-FlagValue @($config.Profiles['MTP 160k']) '--spec-type' 'draft-mtp' 'MTP 160k'
+Assert-FlagValue @($config.Profiles['MTP 160k']) '--spec-draft-n-max' '2' 'MTP 160k'
+Assert-FlagValue @($config.Profiles['MTP 160k']) '--spec-draft-type-k' 'q4_0' 'MTP 160k'
+Assert-FlagValue @($config.Profiles['MTP 160k']) '--spec-draft-type-v' 'q4_0' 'MTP 160k'
+if (@($config.Profiles['MTP 160k']) -contains '--spec-draft-p-min') { throw 'MTP 160k must not use the old --spec-draft-p-min setting.' }
+
+$iconPath = Join-Path $root 'assets\QwenLocalLauncher.ico'
+if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) { throw 'Missing versioned assets/QwenLocalLauncher.ico.' }
+$gitignore = Get-Content -LiteralPath (Join-Path $root '.gitignore') -Raw
+if ($gitignore -match 'assets/QwenLocalLauncher\.ico') { throw 'The final ICO must be versioned, not ignored.' }
 
 $bootstrap = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-bootstrap.ps1') -Raw
-if ($bootstrap -notmatch 'tray-icon\.ps1') { throw 'Tray bootstrap must load tray-icon.ps1.' }
+if ($bootstrap -notmatch 'QwenLocalLauncher\.ico') { throw 'Tray bootstrap must use the versioned ICO directly.' }
 
 $trayIcon = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-icon.ps1') -Raw
-if ($trayIcon -notmatch 'ChangeExtension') { throw 'Tray icon must load the generated ICO.' }
-if ($trayIcon -notmatch 'System.Drawing.Icon') { throw 'Tray icon must use the ICO directly.' }
-
-$theme = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-theme.ps1') -Raw
-if ($theme -notmatch 'QwenMenuRenderer') { throw 'Tray theme must define QwenMenuRenderer.' }
+if ($trayIcon -notmatch 'Register-QwenTrayIcon') { throw 'Tray icon integration is missing.' }
+if ($trayIcon -match 'ChangeExtension') { throw 'Tray icon must not derive an ICO dynamically from the PNG.' }
 
 $builder = Get-Content -LiteralPath (Join-Path $root 'scripts\build-launcher.ps1') -Raw
-if ($builder -notmatch 'Convert-PngToMultiSizeIcon') { throw 'Launcher build must generate a multi-size ICO.' }
-foreach ($size in @('16','32','48','64','128','256')) {
-    if ($builder -notmatch "\b$size\b") { throw "Multi-size ICO is missing size $size." }
-}
-if ($builder -notmatch '/win32icon:') { throw 'Launcher build must embed the generated ICO.' }
+if ($builder -match 'Convert-PngToMultiSizeIcon') { throw 'Launcher build must not regenerate the versioned ICO.' }
+if ($builder -notmatch 'QwenLocalLauncher\.ico') { throw 'Launcher build must use the versioned ICO.' }
+if ($builder -notmatch '/win32icon:') { throw 'Launcher build must embed the versioned ICO.' }
 if ($builder -notmatch 'Qwen Local Launcher\.lnk') { throw 'Build script must create Windows shortcuts.' }
 
 $source = Get-Content -LiteralPath (Join-Path $root 'launcher\QwenLocalLauncher.cs') -Raw

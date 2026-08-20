@@ -3,24 +3,25 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 function New-QwenBrandIcon {
-    param([Parameter(Mandatory)][string]$PngPath)
+    param([Parameter(Mandatory)][string]$IconPath)
 
-    $icoPath = [IO.Path]::ChangeExtension($PngPath, '.ico')
-    if (Test-Path -LiteralPath $icoPath -PathType Leaf) {
-        $stream = [IO.File]::OpenRead($icoPath)
-        try {
-            $temporary = New-Object System.Drawing.Icon($stream, 32, 32)
-            try { return $temporary.Clone() } finally { $temporary.Dispose() }
-        } finally { $stream.Dispose() }
+    if (-not (Test-Path -LiteralPath $IconPath -PathType Leaf)) {
+        throw "Tray icon not found: $IconPath"
     }
 
-    throw "Generated tray icon not found: $icoPath. Run setup.cmd or scripts\build-launcher.ps1 first."
+    $stream = [IO.File]::OpenRead($IconPath)
+    try {
+        $temporary = New-Object System.Drawing.Icon($stream, 32, 32)
+        try { return $temporary.Clone() } finally { $temporary.Dispose() }
+    } finally {
+        $stream.Dispose()
+    }
 }
 
 function Register-QwenTrayIcon {
-    param([Parameter(Mandatory)][string]$PngPath)
+    param([Parameter(Mandatory)][string]$IconPath)
 
-    $script:QwenTrayIconPath = $PngPath
+    $script:QwenTrayIconPath = $IconPath
     $script:QwenBrandIcon = $null
 
     $handler = [System.EventHandler]{
@@ -30,7 +31,7 @@ function Register-QwenTrayIcon {
         $notify = $notifyVar.Value
         if ($script:QwenBrandIcon -and [object]::ReferenceEquals($notify.Icon, $script:QwenBrandIcon)) { return }
 
-        $script:QwenBrandIcon = New-QwenBrandIcon -PngPath $script:QwenTrayIconPath
+        $script:QwenBrandIcon = New-QwenBrandIcon -IconPath $script:QwenTrayIconPath
         $notify.Icon = $script:QwenBrandIcon
     }
 
