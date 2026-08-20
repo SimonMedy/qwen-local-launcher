@@ -22,6 +22,140 @@ public static class QwenForegroundWindow
 "@
 }
 
+if (-not ('QwenServerJob' -as [type])) {
+    Add-Type -ReferencedAssemblies @('System.dll') -TypeDefinition @"
+using System;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+
+public static class QwenServerJob
+{
+    private const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
+    private static IntPtr job = IntPtr.Zero;
+    private static int attachedPid = 0;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JOBOBJECT_BASIC_LIMIT_INFORMATION
+    {
+        public long PerProcessUserTimeLimit;
+        public long PerJobUserTimeLimit;
+        public uint LimitFlags;
+        public UIntPtr MinimumWorkingSetSize;
+        public UIntPtr MaximumWorkingSetSize;
+        public uint ActiveProcessLimit;
+        public UIntPtr Affinity;
+        public uint PriorityClass;
+        public uint SchedulingClass;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct IO_COUNTERS
+    {
+        public ulong ReadOperationCount;
+        public ulong WriteOperationCount;
+        public ulong OtherOperationCount;
+        public ulong ReadTransferCount;
+        public ulong WriteTransferCount;
+        public ulong OtherTransferCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+    {
+        public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
+        public IO_COUNTERS IoInfo;
+        public UIntPtr ProcessMemoryLimit;
+        public UIntPtr JobMemoryLimit;
+        public UIntPtr PeakProcessMemoryUsed;
+        public UIntPtr PeakJobMemoryUsed;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr CreateJobObject(IntPtr lpJobAttributes, string lpName);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetInformationJobObject(IntPtr hJob, int infoType, IntPtr lpJobObjectInfo, uint cbJobObjectInfoLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr handle);
+
+    private static void EnsureJob()
+    {
+        if (job != IntPtr.Zero) return;
+        job = CreateJobObject(IntPtr.Zero, null);
+        if (job == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateJobObject failed");
+
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        int length = Marshal.SizeOf(typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION));
+        IntPtr ptr = Marshal.AllocHGlobal(length);
+        try
+        {
+            Marshal.StructureToPtr(info, ptr, false);
+            if (!SetInformationJobObject(job, 9, ptr, (uint)length))
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "SetInformationJobObject failed");
+        }
+        finally { Marshal.FreeHGlobal(ptr); }
+    }
+
+    public static bool Attach(Process process)
+    {
+        if (process == null || process.HasExited) return false;
+        if (attachedPid == process.Id && job != IntPtr.Zero) return true;
+        EnsureJob();
+        if (!AssignProcessToJobObject(job, process.Handle))
+        {
+            int error = Marshal.GetLastWin32Error();
+            if (error != 5) throw new Win32Exception(error, "AssignProcessToJobObject failed");
+            return false;
+        }
+        attachedPid = process.Id;
+        return true;
+    }
+
+    public static int AttachedPid { get { return attachedPid; } }
+
+    public static void KillAll()
+    {
+        if (job != IntPtr.Zero)
+        {
+            CloseHandle(job);
+            job = IntPtr.Zero;
+        }
+        attachedPid = 0;
+    }
+}
+"@
+}
+
+function Start-QwenDiagnosticsEncoded {
+    $diag = Join-Path $script:Root 'scripts\runtime-diagnostics.ps1'
+    $escape = {
+        param([string]$Value)
+        return $Value.Replace("'", "''")
+    }
+    $diagEsc = & $escape $diag
+    $rootEsc = & $escape $script:Root
+    $hostEsc = & $escape ([string]$script:Config.Host)
+    $profileEsc = & $escape ([string]$script:CurrentProfile)
+    $command = "& '$diagEsc' -Root '$rootEsc' -HostAddress '$hostEsc' -Port $([int]$script:Config.Port) -Profile '$profileEsc'"
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+
+    $psi = New-Object Diagnostics.ProcessStartInfo
+    $psi.FileName = 'powershell.exe'
+    $psi.Arguments = "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $encoded"
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $process = New-Object Diagnostics.Process
+    $process.StartInfo = $psi
+    [void]$process.Start()
+    $process.Dispose()
+}
+
 function Register-QwenPopupBehaviorGuards {
     $script:QwenInteractionGuardsInstalled = $false
 
@@ -31,12 +165,18 @@ function Register-QwenPopupBehaviorGuards {
         $popupVar = Get-Variable -Name Popup -Scope Script -ErrorAction SilentlyContinue
         $stopVar = Get-Variable -Name StopButton -Scope Script -ErrorAction SilentlyContinue
         $restartVar = Get-Variable -Name RestartButton -Scope Script -ErrorAction SilentlyContinue
+        $quitVar = Get-Variable -Name QuitButton -Scope Script -ErrorAction SilentlyContinue
         $timerVar = Get-Variable -Name Timer -Scope Script -ErrorAction SilentlyContinue
-        if (-not $popupVar -or -not $stopVar -or -not $restartVar -or -not $timerVar) { return }
+        if (-not $popupVar -or -not $stopVar -or -not $restartVar -or -not $quitVar -or -not $timerVar) { return }
 
         $script:QwenInteractionGuardsInstalled = $true
         $script:QwenExpectedServerStop = $false
         $script:QwenExpectedServerRestart = $false
+
+        function script:Open-RuntimeDiagnostics {
+            try { Start-QwenDiagnosticsEncoded }
+            catch { try { Write-TrayRuntimeError $_ } catch {} }
+        }
 
         $stopVar.Value.add_MouseDown({
             $script:QwenExpectedServerStop = $true
@@ -44,7 +184,11 @@ function Register-QwenPopupBehaviorGuards {
         })
         $stopVar.Value.add_Click({
             try {
-                if ($script:QwenExpectedServerStop -and (-not $script:Process -or $script:Process.HasExited)) {
+                if ($script:Process -and -not $script:Process.HasExited) {
+                    try { [QwenServerJob]::KillAll() } catch { Write-TrayRuntimeError $_ }
+                    try { $script:Process.WaitForExit(3000) | Out-Null } catch {}
+                }
+                if (-not $script:Process -or $script:Process.HasExited) {
                     Remove-Item -LiteralPath $script:PidPath -Force -ErrorAction SilentlyContinue
                     $script:Process = $null
                     Set-LauncherState 'Stopped' $null
@@ -66,10 +210,31 @@ function Register-QwenPopupBehaviorGuards {
             try { if ($script:Timer) { $script:Timer.Start() } } catch {}
         })
 
+        $quitVar.Value.add_MouseDown({
+            try { if ($script:Timer) { $script:Timer.Stop() } } catch {}
+        })
+        $quitVar.Value.add_Click({
+            try {
+                if ($script:Process -and -not $script:Process.HasExited) {
+                    [QwenServerJob]::KillAll()
+                    try { $script:Process.WaitForExit(3000) | Out-Null } catch {}
+                }
+                if ($script:Process -and $script:Process.HasExited) {
+                    $script:Process = $null
+                    Remove-Item -LiteralPath $script:PidPath -Force -ErrorAction SilentlyContinue
+                    Exit-Launcher
+                }
+            } catch { try { Write-TrayRuntimeError $_ } catch {} }
+        })
+
         $script:QwenPopupGuardTimer = New-Object System.Windows.Forms.Timer
         $script:QwenPopupGuardTimer.Interval = 100
         $script:QwenPopupGuardTimer.add_Tick({
             try {
+                if ($script:Process -and -not $script:Process.HasExited -and [QwenServerJob]::AttachedPid -ne $script:Process.Id) {
+                    try { [void][QwenServerJob]::Attach($script:Process) } catch { Write-TrayRuntimeError $_ }
+                }
+
                 if ($script:Popup -and $script:Popup.Visible) {
                     $foreground = [QwenForegroundWindow]::Current()
                     if ($foreground -ne $script:Popup.Handle -and -not $script:Popup.ContainsFocus) {
