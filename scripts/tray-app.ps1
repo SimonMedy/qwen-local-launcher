@@ -95,7 +95,6 @@ function Update-PopupLayout {
     $script:StatusLabel.SetBounds(18, $y, 324, 24); $y += 28
     $script:LlamaLabel.SetBounds(18, $y, 324, 22); $y += 30
     $script:Divider1.SetBounds(14, $y, 332, 1); $y += 9
-
     foreach ($button in @($script:StartButton,$script:StopButton,$script:RestartButton)) { $button.SetBounds(8,$y,344,40); $y += 40 }
     $y += 3
     $script:ProfileButton.SetBounds(8,$y,344,40); $y += 40
@@ -210,6 +209,30 @@ function Test-AnyProcessAlive {
     return $false
 }
 
+function Invoke-TaskKillSafe {
+    param([Parameter(Mandatory)][int]$ProcessId, [switch]$Tree, [switch]$Force)
+    $psi = New-Object Diagnostics.ProcessStartInfo
+    $psi.FileName = Join-Path $env:SystemRoot 'System32\taskkill.exe'
+    $arguments = New-Object Collections.Generic.List[string]
+    $arguments.Add('/PID'); $arguments.Add([string]$ProcessId)
+    if ($Tree) { $arguments.Add('/T') }
+    if ($Force) { $arguments.Add('/F') }
+    $psi.Arguments = $arguments -join ' '
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $proc = New-Object Diagnostics.Process
+    $proc.StartInfo = $psi
+    [void]$proc.Start()
+    $stdout = $proc.StandardOutput.ReadToEnd()
+    $stderr = $proc.StandardError.ReadToEnd()
+    $proc.WaitForExit()
+    $exitCode = $proc.ExitCode
+    $proc.Dispose()
+    return [pscustomobject]@{ ExitCode=$exitCode; StdOut=$stdout.Trim(); StdErr=$stderr.Trim() }
+}
+
 function Stop-QwenServer {
     param([switch]$ForRestart)
     $script:Stopping = $true
@@ -221,14 +244,17 @@ function Stop-QwenServer {
             $rootPid = $script:Process.Id
             try { $treeIds = @(Get-ProcessTreeIds -RootPid $rootPid) } catch { Write-TrayRuntimeError $_; $treeIds = @($rootPid) }
             if (Test-AnyProcessAlive $treeIds) {
-                & "$env:SystemRoot\System32\taskkill.exe" /PID $rootPid /T 2>$null | Out-Null
+                $graceful = Invoke-TaskKillSafe -ProcessId $rootPid -Tree
+                if ($graceful.ExitCode -ne 0 -and $graceful.StdErr) {
+                    Add-Content -LiteralPath (Join-Path $script:LogDir 'tray-runtime-error.log') -Value "[$(Get-Date -Format o)] Graceful taskkill returned $($graceful.ExitCode): $($graceful.StdErr)" -Encoding UTF8
+                }
                 $deadline = (Get-Date).AddSeconds([int]$script:Config.StopTimeoutSeconds)
                 while ((Get-Date) -lt $deadline -and (Test-AnyProcessAlive $treeIds)) { Start-Sleep -Milliseconds 200 }
             }
             if (Test-AnyProcessAlive $treeIds) {
                 for ($i = $treeIds.Count - 1; $i -ge 0; $i--) {
                     $processId = [int]$treeIds[$i]
-                    if (Get-Process -Id $processId -ErrorAction SilentlyContinue) { & "$env:SystemRoot\System32\taskkill.exe" /PID $processId /T /F 2>$null | Out-Null }
+                    if (Get-Process -Id $processId -ErrorAction SilentlyContinue) { [void](Invoke-TaskKillSafe -ProcessId $processId -Tree -Force) }
                 }
                 Start-Sleep -Milliseconds 500
             }

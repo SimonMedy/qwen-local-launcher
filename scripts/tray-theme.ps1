@@ -66,12 +66,12 @@ public sealed class QwenMenuButton : Control
 
     public QwenMenuButton()
     {
+        SetStyle(ControlStyles.SupportsTransparentBackColor | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
         Height = 40;
         Cursor = Cursors.Hand;
         BackColor = Color.Transparent;
         ForeColor = Color.FromArgb(242, 243, 245);
         DoubleBuffered = true;
-        SetStyle(ControlStyles.SupportsTransparentBackColor | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
     }
 
     protected override void OnMouseEnter(EventArgs e) { hovered = true; Invalidate(); base.OnMouseEnter(e); }
