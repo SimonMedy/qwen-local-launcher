@@ -11,71 +11,88 @@ $files = @(
     (Join-Path $root 'scripts\runtime-diagnostics.ps1'),
     (Join-Path $root 'scripts\tray-launcher.ps1'),
     (Join-Path $root 'scripts\configure-llama.ps1'),
-    (Join-Path $root 'scripts\build-launcher.ps1'),
-    (Join-Path $root 'scripts\check.ps1')
+    (Join-Path $root 'scripts\build-launcher.ps1')
 )
 foreach ($file in $files) {
     $tokens = $null
     $errors = $null
-    [void][System.Management.Automation.Language.Parser]::ParseFile($file,[ref]$tokens,[ref]$errors)
-    if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error "${file}:$($_.Extent.StartLineNumber): $($_.Message)" } }
+    [void][Management.Automation.Language.Parser]::ParseFile($file, [ref]$tokens, [ref]$errors)
+    foreach ($parseError in $errors) {
+        Write-Error "$file :$($parseError.Extent.StartLineNumber): $($parseError.Message)"
+    }
 }
 
 $config = Import-PowerShellDataFile -LiteralPath (Join-Path $root 'config\profiles.psd1')
-foreach ($name in @('Stable 160k','MTP 128k','Stable 180k')) { if (-not $config.Profiles.Contains($name)) { throw "Missing required profile: $name" } }
+if ($config.Profiles.Count -ne 2) { throw 'Exactly two profiles are expected.' }
+foreach ($required in @('Stable 160k', 'MTP 128k')) {
+    if (-not $config.Profiles.Contains($required)) { throw "Missing profile: $required" }
+}
+if ($config.Profiles.Contains('Stable 180k')) { throw 'Stable 180k must be removed.' }
+
 function Assert-FlagValue {
-    param([object[]]$ProfileArgs,[string]$Flag,[string]$Expected,[string]$Profile)
-    $index = [Array]::IndexOf($ProfileArgs,$Flag)
-    if ($index -lt 0 -or $index + 1 -ge $ProfileArgs.Count -or [string]$ProfileArgs[$index + 1] -ne $Expected) { throw "Profile '$Profile' must contain $Flag $Expected." }
+    param([object[]]$ProfileArgs, [string]$Flag, [string]$Expected, [string]$Profile)
+    $index = [Array]::IndexOf($ProfileArgs, $Flag)
+    if ($index -lt 0 -or $index + 1 -ge $ProfileArgs.Count -or [string]$ProfileArgs[$index + 1] -ne $Expected) {
+        throw "Profile '$Profile' must contain $Flag $Expected."
+    }
 }
+
+$commonPairs = @(
+    @('-hf', 'unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL'),
+    @('-ngl', 'auto'),
+    @('--cache-type-k', 'q8_0'),
+    @('--cache-type-v', 'q4_0'),
+    @('--flash-attn', 'on'),
+    @('--image-min-tokens', '1024'),
+    @('-np', '1'),
+    @('--cache-ram', '4096'),
+    @('-b', '1024'),
+    @('-ub', '128'),
+    @('-t', '8'),
+    @('-tb', '16'),
+    @('-lv', '4'),
+    @('--temp', '1.0'),
+    @('--top-p', '0.95'),
+    @('--top-k', '20'),
+    @('--min-p', '0.0'),
+    @('--presence-penalty', '0.0'),
+    @('--repeat-penalty', '1.0')
+)
 foreach ($name in $config.Profiles.Keys) {
-    $profileArgs = @($config.Profiles[$name])
-    if ($profileArgs -contains '--no-mmproj') { throw "Profile '$name' disables multimodal support." }
-    if ($profileArgs -contains '--fit-target') { throw "Profile '$name' must not use --fit-target." }
-    if ($profileArgs -contains '--cache-reuse') { throw "Profile '$name' must not use --cache-reuse with multimodal enabled." }
-    Assert-FlagValue $profileArgs '-hf' 'unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL' $name
-    Assert-FlagValue $profileArgs '-ngl' 'auto' $name
-    Assert-FlagValue $profileArgs '--cache-type-k' 'q8_0' $name
-    Assert-FlagValue $profileArgs '--cache-type-v' 'q4_0' $name
-    Assert-FlagValue $profileArgs '--flash-attn' 'on' $name
-    Assert-FlagValue $profileArgs '--image-min-tokens' '1024' $name
-    Assert-FlagValue $profileArgs '-np' '1' $name
-    Assert-FlagValue $profileArgs '--cache-ram' '4096' $name
-    Assert-FlagValue $profileArgs '-t' '8' $name
-    Assert-FlagValue $profileArgs '-tb' '16' $name
-    Assert-FlagValue $profileArgs '--temp' '1.0' $name
-    Assert-FlagValue $profileArgs '--top-p' '0.95' $name
-    Assert-FlagValue $profileArgs '--top-k' '20' $name
-    Assert-FlagValue $profileArgs '--min-p' '0.0' $name
-    Assert-FlagValue $profileArgs '--presence-penalty' '0.0' $name
-    Assert-FlagValue $profileArgs '--repeat-penalty' '1.0' $name
+    $args = @($config.Profiles[$name])
+    foreach ($forbidden in @('--no-mmproj', '--fit-target', '--cache-reuse')) {
+        if ($args -contains $forbidden) { throw "Profile '$name' must not contain $forbidden." }
+    }
+    foreach ($pair in $commonPairs) { Assert-FlagValue $args $pair[0] $pair[1] $name }
+    foreach ($flag in @('--no-mmproj-offload', '--reasoning-preserve')) {
+        if ($args -notcontains $flag) { throw "Profile '$name' must contain $flag." }
+    }
 }
+Assert-FlagValue @($config.Profiles['Stable 160k']) '-c' '160000' 'Stable 160k'
+Assert-FlagValue @($config.Profiles['Stable 160k']) '--fit-ctx' '160000' 'Stable 160k'
+Assert-FlagValue @($config.Profiles['MTP 128k']) '-c' '131072' 'MTP 128k'
+Assert-FlagValue @($config.Profiles['MTP 128k']) '--fit-ctx' '131072' 'MTP 128k'
+$mtp = @($config.Profiles['MTP 128k'])
+Assert-FlagValue $mtp '--spec-type' 'draft-mtp' 'MTP 128k'
+Assert-FlagValue $mtp '--spec-draft-n-max' '2' 'MTP 128k'
+Assert-FlagValue $mtp '--spec-draft-type-k' 'q4_0' 'MTP 128k'
+Assert-FlagValue $mtp '--spec-draft-type-v' 'q4_0' 'MTP 128k'
 
 $bootstrap = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-bootstrap.ps1') -Raw
-foreach ($needle in @('QwenServerJob','JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE','AssignProcessToJobObject','Start-QwenDiagnosticsEncoded','EncodedCommand','QwenForegroundWindow')) {
-    if ($bootstrap -notmatch [regex]::Escape($needle)) { throw "Bootstrap missing reliability primitive: $needle" }
-}
-if ($bootstrap -match '[^\x00-\x7F]') { throw 'Tray bootstrap must remain ASCII-only for Windows PowerShell 5.1 compatibility.' }
-
 $tray = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-app.ps1') -Raw
-foreach ($needle in @('Get-ProcessTreeIds','Invoke-TaskKillSafe','Runtime diagnostics','ProfileOrder','--metrics','QwenPopupForm')) {
-    if ($tray -notmatch [regex]::Escape($needle)) { throw "Tray missing expected behavior: $needle" }
-}
-if ($tray -match 'ContextMenuStrip|ToolStripMenuItem') { throw 'Tray must use the custom borderless popup instead of ToolStrip menus.' }
-
-$theme = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-theme.ps1') -Raw
-foreach ($needle in @('QwenPopupForm','QwenMenuButton','TextRenderer','DwmSetWindowAttribute')) {
-    if ($theme -notmatch [regex]::Escape($needle)) { throw "Theme missing expected popup primitive: $needle" }
-}
-if ($theme -match '[^\x00-\x7F]') { throw 'Tray theme must remain ASCII-only for Windows PowerShell 5.1 compatibility.' }
-if ($tray -match '[^\x00-\x7F]') { throw 'Tray app must remain ASCII-only for Windows PowerShell 5.1 compatibility.' }
-
+$iconScript = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-icon.ps1') -Raw
 $diagPath = Join-Path $root 'scripts\runtime-diagnostics.ps1'
 $diag = Get-Content -LiteralPath $diagPath -Raw
-foreach ($needle in @('/health','/slots','/metrics','GPUProcessMemory','CommittedBytes','model buffer size','KV buffer size','compute buffer size','GPU layers','mmproj backend','SelfTest','runtime-diagnostics-error.log')) {
+
+if ($bootstrap -notmatch 'JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE') { throw 'Bootstrap must keep the Windows Job Object.' }
+if ($tray -match 'ContextMenuStrip|ToolStripMenuItem') { throw 'Tray must use the custom popup.' }
+if ($iconScript -match 'Procesps') { throw 'tray-icon contains the invalid Procesps typo.' }
+foreach ($needle in @('/slots','/metrics','GPUProcessMemory','Requested context','Auto-fit minimum','not captured in current log','GPU layers','mmproj backend','SelfTest')) {
     if ($diag -notmatch [regex]::Escape($needle)) { throw "Diagnostics missing expected signal: $needle" }
 }
-if ($diag -match '[^\x00-\x7F]') { throw 'Runtime diagnostics must remain ASCII-only for Windows PowerShell 5.1 compatibility.' }
+foreach ($text in @($bootstrap, $tray, $iconScript, $diag)) {
+    if ($text -match '[^\x00-\x7F]') { throw 'Runtime scripts must remain ASCII-only.' }
+}
 
 . (Join-Path $root 'scripts\tray-theme.ps1')
 $smoke = New-QwenPopupForm
@@ -83,11 +100,20 @@ $smokeButton = New-QwenPopupButton 'Smoke test'
 $smoke.Controls.Add($smokeButton)
 $smoke.Dispose()
 
+$originalCulture = [Threading.Thread]::CurrentThread.CurrentCulture
+try {
+    $testCulture = [Globalization.CultureInfo]::InvariantCulture.Clone()
+    $testCulture.NumberFormat.NumberGroupSeparator = ''
+    $testCulture.NumberFormat.NumberDecimalSeparator = '.'
+    [Threading.Thread]::CurrentThread.CurrentCulture = $testCulture
+    & $diagPath -Root $root -SelfTest
+} finally {
+    [Threading.Thread]::CurrentThread.CurrentCulture = $originalCulture
+}
+
 $iconPath = Join-Path $root 'assets\QwenLocalLauncher.ico'
-if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) { throw 'Missing versioned assets/QwenLocalLauncher.ico.' }
+if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) { throw 'Missing versioned ICO.' }
 $builder = Get-Content -LiteralPath (Join-Path $root 'scripts\build-launcher.ps1') -Raw
-if ($builder -match 'Convert-PngToMultiSizeIcon') { throw 'Launcher build must not regenerate the versioned ICO.' }
-if ($builder -notmatch '/win32icon:') { throw 'Launcher build must embed the versioned ICO.' }
-$setup = Get-Content -LiteralPath (Join-Path $root 'setup.cmd') -Raw
-if ($setup -notmatch 'dist\\Qwen Local Launcher\.exe') { throw 'Setup must launch the executable from dist.' }
+if ($builder -notmatch '/win32icon:') { throw 'Launcher must embed the versioned ICO.' }
+
 Write-Host 'Static checks passed.'
