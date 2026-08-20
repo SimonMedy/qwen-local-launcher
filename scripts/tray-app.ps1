@@ -7,7 +7,6 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
@@ -25,7 +24,6 @@ $script:ProfileMenuItems = @{}
 $script:ChangingLlama = $false
 
 New-Item -ItemType Directory -Force -Path $script:LogDir, $script:RuntimeDir | Out-Null
-
 $mutex = New-Object System.Threading.Mutex($true, 'Local\QwenLocalLauncher.Tray', [ref]$createdNew)
 if (-not $createdNew) {
     [System.Windows.Forms.MessageBox]::Show('Qwen Local Launcher is already running.', 'Qwen Local Launcher') | Out-Null
@@ -55,15 +53,10 @@ function Import-LauncherConfig {
 function Reload-LauncherConfig {
     $oldProfile = $script:CurrentProfile
     $script:Config = Import-LauncherConfig
-    if ($oldProfile -and $script:Config.Profiles.Contains($oldProfile)) {
-        $script:CurrentProfile = $oldProfile
-    } elseif ($script:Config.Profiles.Contains([string]$script:Config.DefaultProfile)) {
-        $script:CurrentProfile = [string]$script:Config.DefaultProfile
-    } else {
-        $script:CurrentProfile = [string]($script:Config.Profiles.Keys | Select-Object -First 1)
-    }
+    if ($oldProfile -and $script:Config.Profiles.Contains($oldProfile)) { $script:CurrentProfile = $oldProfile }
+    elseif ($script:Config.Profiles.Contains([string]$script:Config.DefaultProfile)) { $script:CurrentProfile = [string]$script:Config.DefaultProfile }
+    else { $script:CurrentProfile = [string]($script:Config.Profiles.Keys | Select-Object -First 1) }
 }
-
 Reload-LauncherConfig
 
 function Resolve-LlamaServer {
@@ -82,9 +75,7 @@ function Get-LlamaLabel {
         $parent = Split-Path -Leaf (Split-Path -Parent $exe)
         if ([string]::IsNullOrWhiteSpace($parent)) { return 'llama.cpp configured' }
         return "llama.cpp: $parent"
-    } catch {
-        return 'llama.cpp: not configured'
-    }
+    } catch { return 'llama.cpp: not configured' }
 }
 
 function ConvertTo-CommandLineArgument {
@@ -100,23 +91,17 @@ function Get-ServerArguments {
 }
 
 function Set-LauncherState {
-    param(
-        [ValidateSet('Stopped','Starting','Running','Error')][string]$State,
-        [string]$Detail
-    )
-
+    param([ValidateSet('Stopped','Starting','Running','Error')][string]$State, [string]$Detail)
     $script:State = $State
     $tooltip = "Qwen Local - $State - $($script:CurrentProfile)"
     if ($tooltip.Length -gt 63) { $tooltip = $tooltip.Substring(0, 63) }
     $script:NotifyIcon.Text = $tooltip
-    $script:StatusItem.Text = if ($Detail) { "$State - $Detail" } else { "$State - $($script:CurrentProfile)" }
+    $script:StatusItem.Text = if ($Detail) { "$State  ·  $Detail" } else { "$State  ·  $($script:CurrentProfile)" }
     $script:LlamaInfoItem.Text = Get-LlamaLabel
-
     $script:StartItem.Enabled = (-not $script:ChangingLlama) -and ($State -in @('Stopped','Error'))
     $script:StopItem.Enabled = (-not $script:ChangingLlama) -and ($State -in @('Starting','Running'))
     $script:RestartItem.Enabled = (-not $script:ChangingLlama) -and ($State -in @('Starting','Running','Error'))
     $script:ChangeLlamaItem.Enabled = -not $script:ChangingLlama
-
     foreach ($name in $script:ProfileMenuItems.Keys) {
         $item = $script:ProfileMenuItems[$name]
         $item.Checked = $name -eq $script:CurrentProfile
@@ -126,32 +111,22 @@ function Set-LauncherState {
 
 function Test-ServerHealth {
     try {
-        $uri = "http://$($script:Config.Host):$($script:Config.Port)$($script:Config.HealthPath)"
-        Invoke-WebRequest -Uri $uri -UseBasicParsing -TimeoutSec 1 | Out-Null
+        Invoke-WebRequest -Uri "http://$($script:Config.Host):$($script:Config.Port)$($script:Config.HealthPath)" -UseBasicParsing -TimeoutSec 1 | Out-Null
         return $true
-    } catch {
-        return $false
-    }
+    } catch { return $false }
 }
 
 function Connect-ExistingQwenServer {
     if (-not (Test-Path -LiteralPath $script:PidPath -PathType Leaf)) { return $false }
-
     try {
         $pidText = (Get-Content -LiteralPath $script:PidPath -Raw).Trim()
         $serverPid = 0
         if (-not [int]::TryParse($pidText, [ref]$serverPid) -or $serverPid -le 0) { throw 'Invalid PID file.' }
-
         $existing = Get-Process -Id $serverPid -ErrorAction Stop
         if ($existing.ProcessName -ne 'llama-server') { throw "PID $serverPid is not llama-server.exe." }
-
         $script:Process = $existing
-        if (Test-ServerHealth) {
-            Set-LauncherState 'Running' 'reconnected to existing server'
-        } else {
-            $script:StartupDeadline = (Get-Date).AddSeconds(30)
-            Set-LauncherState 'Starting' 'reconnected; health check pending'
-        }
+        if (Test-ServerHealth) { Set-LauncherState 'Running' 'reconnected' }
+        else { $script:StartupDeadline = (Get-Date).AddSeconds(30); Set-LauncherState 'Starting' 'reconnected; health pending' }
         return $true
     } catch {
         Write-TrayRuntimeError $_
@@ -163,14 +138,8 @@ function Connect-ExistingQwenServer {
 
 function Start-QwenServer {
     if ($script:Process) {
-        try {
-            $script:Process.Refresh()
-            if (-not $script:Process.HasExited) { return }
-        } catch {
-            $script:Process = $null
-        }
+        try { $script:Process.Refresh(); if (-not $script:Process.HasExited) { return } } catch { $script:Process = $null }
     }
-
     try {
         $exe = Resolve-LlamaServer
         $serverArgs = Get-ServerArguments
@@ -179,17 +148,8 @@ function Start-QwenServer {
         $stdout = Join-Path $script:LogDir "$stamp-$safeProfile.stdout.log"
         $stderr = Join-Path $script:LogDir "$stamp-$safeProfile.stderr.log"
         $quoted = @($serverArgs | ForEach-Object { ConvertTo-CommandLineArgument ([string]$_) }) -join ' '
-
         "[$(Get-Date -Format o)] $exe $quoted" | Set-Content -LiteralPath (Join-Path $script:LogDir 'last-command.txt') -Encoding UTF8
-
-        $process = Start-Process -FilePath $exe `
-            -ArgumentList $quoted `
-            -WorkingDirectory (Split-Path -Parent $exe) `
-            -WindowStyle Hidden `
-            -RedirectStandardOutput $stdout `
-            -RedirectStandardError $stderr `
-            -PassThru
-
+        $process = Start-Process -FilePath $exe -ArgumentList $quoted -WorkingDirectory (Split-Path -Parent $exe) -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
         if (-not $process) { throw 'Start-Process did not return a process.' }
         $script:Process = $process
         Set-Content -LiteralPath $script:PidPath -Value $process.Id -Encoding ASCII
@@ -204,205 +164,190 @@ function Start-QwenServer {
     }
 }
 
+function Get-ProcessTreeIds {
+    param([Parameter(Mandatory)][int]$RootPid)
+    $all = @(Get-CimInstance Win32_Process -ErrorAction Stop | Select-Object ProcessId, ParentProcessId)
+    $result = New-Object Collections.Generic.List[int]
+    $queue = New-Object Collections.Generic.Queue[int]
+    $queue.Enqueue($RootPid)
+    while ($queue.Count -gt 0) {
+        $parent = $queue.Dequeue()
+        if (-not $result.Contains($parent)) { $result.Add($parent) }
+        foreach ($child in $all | Where-Object { [int]$_.ParentProcessId -eq $parent }) {
+            $queue.Enqueue([int]$child.ProcessId)
+        }
+    }
+    return @($result)
+}
+
+function Test-AnyProcessAlive {
+    param([int[]]$ProcessIds)
+    foreach ($id in $ProcessIds) {
+        if (Get-Process -Id $id -ErrorAction SilentlyContinue) { return $true }
+    }
+    return $false
+}
+
 function Stop-QwenServer {
     param([switch]$ForRestart)
-
     $script:Stopping = $true
+    $success = $true
     try {
         if (-not $script:Process) { [void](Connect-ExistingQwenServer) }
         if ($script:Process) {
-            try {
-                $script:Process.Refresh()
-                if (-not $script:Process.HasExited) {
-                    $pidToStop = $script:Process.Id
-                    & "$env:SystemRoot\System32\taskkill.exe" /PID $pidToStop /T 2>$null | Out-Null
-                    try { $script:Process.WaitForExit([int]$script:Config.StopTimeoutSeconds * 1000) | Out-Null } catch {}
-                    $script:Process.Refresh()
-                    if (-not $script:Process.HasExited) {
-                        & "$env:SystemRoot\System32\taskkill.exe" /PID $pidToStop /T /F 2>$null | Out-Null
-                        try { $script:Process.WaitForExit(3000) | Out-Null } catch {}
+            $script:Process.Refresh()
+            $rootPid = $script:Process.Id
+            try { $treeIds = @(Get-ProcessTreeIds -RootPid $rootPid) } catch { Write-TrayRuntimeError $_; $treeIds = @($rootPid) }
+
+            if (Test-AnyProcessAlive $treeIds) {
+                & "$env:SystemRoot\System32\taskkill.exe" /PID $rootPid /T 2>$null | Out-Null
+                $deadline = (Get-Date).AddSeconds([int]$script:Config.StopTimeoutSeconds)
+                while ((Get-Date) -lt $deadline -and (Test-AnyProcessAlive $treeIds)) { Start-Sleep -Milliseconds 200 }
+            }
+
+            if (Test-AnyProcessAlive $treeIds) {
+                foreach ($pidToKill in @($treeIds | Select-Object -Reverse)) {
+                    if (Get-Process -Id $pidToKill -ErrorAction SilentlyContinue) {
+                        & "$env:SystemRoot\System32\taskkill.exe" /PID $pidToKill /T /F 2>$null | Out-Null
                     }
                 }
-            } catch {
-                Write-TrayRuntimeError $_
+                Start-Sleep -Milliseconds 400
+            }
+
+            if (Test-AnyProcessAlive $treeIds) {
+                $success = $false
+                $survivors = @($treeIds | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue }) -join ', '
+                throw "Could not stop the full llama.cpp process tree. Surviving PID(s): $survivors"
             }
         }
+    } catch {
+        $success = $false
+        Write-TrayRuntimeError $_
+        try { Set-LauncherState 'Error' 'stop failed; see logs' } catch {}
+        try { $script:NotifyIcon.ShowBalloonTip(5000, 'Could not stop llama.cpp', $_.Exception.Message, [System.Windows.Forms.ToolTipIcon]::Error) } catch {}
     } finally {
-        Remove-Item -LiteralPath $script:PidPath -Force -ErrorAction SilentlyContinue
-        $script:Process = $null
-        $script:StartupDeadline = $null
+        if ($success) {
+            Remove-Item -LiteralPath $script:PidPath -Force -ErrorAction SilentlyContinue
+            $script:Process = $null
+            $script:StartupDeadline = $null
+            if (-not $ForRestart) { Set-LauncherState 'Stopped' $null }
+        }
         $script:Stopping = $false
-        if (-not $ForRestart) { Set-LauncherState 'Stopped' $null }
     }
+    return $success
 }
 
-function Restart-QwenServer {
-    Stop-QwenServer -ForRestart
-    Start-QwenServer
-}
+function Restart-QwenServer { if (Stop-QwenServer -ForRestart) { Start-QwenServer } }
 
 function Change-LlamaServer {
     if ($script:ChangingLlama) { return }
-
     $script:ChangingLlama = $true
     $wasRunning = $script:Process -and -not $script:Process.HasExited
     $oldConfig = $script:Config
-
     try {
         Set-LauncherState $script:State 'changing llama.cpp'
-        if ($wasRunning) { Stop-QwenServer -ForRestart }
+        if ($wasRunning -and -not (Stop-QwenServer -ForRestart)) { throw 'Could not stop llama.cpp before changing build.' }
         $setupScript = Join-Path $script:Root 'scripts\configure-llama.ps1'
-        $setupArgs = @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $setupScript)
+        $setupArgs = @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$setupScript)
         $setup = Start-Process -FilePath 'powershell.exe' -ArgumentList $setupArgs -Wait -PassThru
-
-        if ($setup.ExitCode -eq 0) {
-            Reload-LauncherConfig
-            $selected = Resolve-LlamaServer
-            Set-LauncherState 'Stopped' $null
-            $script:NotifyIcon.ShowBalloonTip(2500, 'llama.cpp changed', "Now using $selected", [System.Windows.Forms.ToolTipIcon]::Info)
-        } else {
-            $script:Config = $oldConfig
-            Set-LauncherState 'Stopped' 'change cancelled'
-        }
+        if ($setup.ExitCode -eq 0) { Reload-LauncherConfig; $selected = Resolve-LlamaServer; Set-LauncherState 'Stopped' $null; $script:NotifyIcon.ShowBalloonTip(2500,'llama.cpp changed',"Now using $selected",[System.Windows.Forms.ToolTipIcon]::Info) }
+        else { $script:Config = $oldConfig; Set-LauncherState 'Stopped' 'change cancelled' }
     } catch {
-        Write-TrayRuntimeError $_
-        $script:Config = $oldConfig
-        Set-LauncherState 'Error' $_.Exception.Message
-        $script:NotifyIcon.ShowBalloonTip(5000, 'Could not change llama.cpp', $_.Exception.Message, [System.Windows.Forms.ToolTipIcon]::Error)
+        Write-TrayRuntimeError $_; $script:Config = $oldConfig; Set-LauncherState 'Error' $_.Exception.Message
+        $script:NotifyIcon.ShowBalloonTip(5000,'Could not change llama.cpp',$_.Exception.Message,[System.Windows.Forms.ToolTipIcon]::Error)
     } finally {
         $script:ChangingLlama = $false
         Set-LauncherState $script:State $null
-        if ($wasRunning) { Start-QwenServer }
+        if ($wasRunning -and -not $script:Process) { Start-QwenServer }
     }
 }
 
-function Open-WebUi {
-    Start-Process "http://$($script:Config.Host):$($script:Config.Port)/"
+function Open-WebUi { Start-Process "http://$($script:Config.Host):$($script:Config.Port)/" }
+function Open-Logs { Start-Process 'explorer.exe' -ArgumentList $script:LogDir }
+function Open-RuntimeDiagnostics {
+    $diag = Join-Path $script:Root 'scripts\runtime-diagnostics.ps1'
+    $diagArgs = @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',$diag,'-Root',$script:Root,'-HostAddress',[string]$script:Config.Host,'-Port',[string]$script:Config.Port)
+    Start-Process -FilePath 'powershell.exe' -ArgumentList $diagArgs | Out-Null
 }
 
-function Open-Logs {
-    Start-Process 'explorer.exe' -ArgumentList $script:LogDir
-}
-
-function Get-StartupShortcutPath {
-    $startup = [Environment]::GetFolderPath('Startup')
-    return Join-Path $startup 'Qwen Local Launcher.lnk'
-}
-
-function Test-StartupEnabled {
-    return Test-Path -LiteralPath (Get-StartupShortcutPath)
-}
-
+function Get-StartupShortcutPath { return Join-Path ([Environment]::GetFolderPath('Startup')) 'Qwen Local Launcher.lnk' }
+function Test-StartupEnabled { return Test-Path -LiteralPath (Get-StartupShortcutPath) }
 function Set-StartupEnabled {
     param([bool]$Enabled)
     $shortcutPath = Get-StartupShortcutPath
     if ($Enabled) {
         $shell = New-Object -ComObject WScript.Shell
-        try {
-            $shortcut = $shell.CreateShortcut($shortcutPath)
-            $shortcut.TargetPath = Join-Path $script:Root 'scripts\launch-hidden.vbs'
-            $shortcut.WorkingDirectory = $script:Root
-            $shortcut.Description = 'Qwen Local Launcher'
-            $shortcut.Save()
-        } finally {
-            [Runtime.InteropServices.Marshal]::ReleaseComObject($shell) | Out-Null
-        }
-    } else {
-        Remove-Item -LiteralPath $shortcutPath -Force -ErrorAction SilentlyContinue
-    }
+        try { $shortcut = $shell.CreateShortcut($shortcutPath); $shortcut.TargetPath = Join-Path $script:Root 'scripts\launch-hidden.vbs'; $shortcut.WorkingDirectory = $script:Root; $shortcut.Description = 'Qwen Local Launcher'; $shortcut.Save() }
+        finally { [Runtime.InteropServices.Marshal]::ReleaseComObject($shell) | Out-Null }
+    } else { Remove-Item -LiteralPath $shortcutPath -Force -ErrorAction SilentlyContinue }
     $script:StartupItem.Checked = Test-StartupEnabled
 }
 
 function Exit-Launcher {
     $script:Timer.Stop()
-    Stop-QwenServer
+    if (-not (Stop-QwenServer)) { $script:Timer.Start(); return }
     $script:NotifyIcon.Visible = $false
     if ($script:NotifyIcon.Icon) { $script:NotifyIcon.Icon.Dispose() }
-    $script:NotifyIcon.Dispose()
-    $script:Menu.Dispose()
-    $mutex.ReleaseMutex()
-    $mutex.Dispose()
+    $script:NotifyIcon.Dispose(); $script:Menu.Dispose(); $mutex.ReleaseMutex(); $mutex.Dispose()
     [System.Windows.Forms.Application]::Exit()
 }
 
 $script:Menu = New-Object System.Windows.Forms.ContextMenuStrip
-$script:Menu.ShowImageMargin = $false
+$script:Menu.ShowImageMargin = $false; $script:Menu.ShowCheckMargin = $false
 $script:Menu.Font = New-Object System.Drawing.Font 'Segoe UI', 10
-
 $script:StatusItem = New-Object System.Windows.Forms.ToolStripMenuItem
-$script:StatusItem.Enabled = $false
-$script:StatusItem.Font = New-Object System.Drawing.Font 'Segoe UI Semibold', 10
+$script:StatusItem.Enabled = $false; $script:StatusItem.Font = New-Object System.Drawing.Font 'Segoe UI Semibold', 10
 [void]$script:Menu.Items.Add($script:StatusItem)
-
 $script:LlamaInfoItem = New-Object System.Windows.Forms.ToolStripMenuItem
 $script:LlamaInfoItem.Enabled = $false
 [void]$script:Menu.Items.Add($script:LlamaInfoItem)
 [void]$script:Menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
 
-$script:StartItem = $script:Menu.Items.Add('Start')
-$script:StopItem = $script:Menu.Items.Add('Stop')
-$script:RestartItem = $script:Menu.Items.Add('Restart')
-$script:StartItem.add_Click({ Start-QwenServer })
-$script:StopItem.add_Click({ Stop-QwenServer })
-$script:RestartItem.add_Click({ Restart-QwenServer })
+$script:StartItem = $script:Menu.Items.Add('Start server')
+$script:StopItem = $script:Menu.Items.Add('Stop server')
+$script:RestartItem = $script:Menu.Items.Add('Restart server')
+$script:StartItem.add_Click({ Start-QwenServer }); $script:StopItem.add_Click({ [void](Stop-QwenServer) }); $script:RestartItem.add_Click({ Restart-QwenServer })
 
 $profileMenu = New-Object System.Windows.Forms.ToolStripMenuItem 'Profile'
-foreach ($profileName in $script:Config.Profiles.Keys) {
+$profileNames = if ($script:Config.ProfileOrder) { @($script:Config.ProfileOrder) } else { @($script:Config.Profiles.Keys) }
+foreach ($profileName in $profileNames) {
+    if (-not $script:Config.Profiles.Contains([string]$profileName)) { continue }
     $item = New-Object System.Windows.Forms.ToolStripMenuItem ([string]$profileName)
     $item.CheckOnClick = $false
-    $capturedName = [string]$profileName
-    $item.add_Click({
-        $script:CurrentProfile = $this.Text
-        Set-LauncherState $script:State $null
-    })
-    $script:ProfileMenuItems[$capturedName] = $item
+    $item.add_Click({ $script:CurrentProfile = $this.Text; Set-LauncherState $script:State $null })
+    $script:ProfileMenuItems[[string]$profileName] = $item
     [void]$profileMenu.DropDownItems.Add($item)
 }
 [void]$script:Menu.Items.Add($profileMenu)
 
-$script:ChangeLlamaItem = $script:Menu.Items.Add('Change llama.cpp...')
+$script:ChangeLlamaItem = $script:Menu.Items.Add('Change llama.cpp…')
 $script:ChangeLlamaItem.add_Click({ Change-LlamaServer })
-
 [void]$script:Menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
 $webItem = $script:Menu.Items.Add('Open Web UI')
+$diagItem = $script:Menu.Items.Add('Runtime diagnostics')
 $logsItem = $script:Menu.Items.Add('Open logs')
-$webItem.add_Click({ Open-WebUi })
-$logsItem.add_Click({ Open-Logs })
-
+$webItem.add_Click({ Open-WebUi }); $diagItem.add_Click({ Open-RuntimeDiagnostics }); $logsItem.add_Click({ Open-Logs })
 [void]$script:Menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
-$script:StartupItem = New-Object System.Windows.Forms.ToolStripMenuItem 'Start with Windows'
+
+$script:StartupItem = New-Object System.Windows.Forms.ToolStripMenuItem 'Launch at Windows startup'
 $script:StartupItem.Checked = Test-StartupEnabled
 $script:StartupItem.add_Click({ Set-StartupEnabled (-not (Test-StartupEnabled)) })
 [void]$script:Menu.Items.Add($script:StartupItem)
-
 $aboutItem = $script:Menu.Items.Add('About')
 $aboutItem.add_Click({
     $llama = try { Resolve-LlamaServer } catch { 'Not configured' }
-    [System.Windows.Forms.MessageBox]::Show(
-        "Qwen Local Launcher`r`nWindows tray controller for llama.cpp`r`n`r`nProfile: $($script:CurrentProfile)`r`nllama.cpp: $llama",
-        'About Qwen Local Launcher',
-        [System.Windows.Forms.MessageBoxButtons]::OK,
-        [System.Windows.Forms.MessageBoxIcon]::Information
-    ) | Out-Null
+    [System.Windows.Forms.MessageBox]::Show("Qwen Local Launcher`r`n`r`nProfile: $($script:CurrentProfile)`r`nllama.cpp: $llama",'About Qwen Local Launcher',[System.Windows.Forms.MessageBoxButtons]::OK,[System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
 })
-
 [void]$script:Menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
 $quitItem = $script:Menu.Items.Add('Quit')
 $quitItem.add_Click({ Exit-Launcher })
 
 $script:NotifyIcon = New-Object System.Windows.Forms.NotifyIcon
 $script:NotifyIcon.ContextMenuStrip = $script:Menu
-
 try {
     $brandPathVar = Get-Variable -Name QwenTrayIconPath -Scope Script -ErrorAction SilentlyContinue
-    if ($brandPathVar -and (Get-Command New-QwenBrandIcon -ErrorAction SilentlyContinue)) {
-        $script:QwenBrandIcon = New-QwenBrandIcon -IconPath ([string]$brandPathVar.Value)
-        $script:NotifyIcon.Icon = $script:QwenBrandIcon
-    }
-} catch {
-    Write-TrayRuntimeError $_
-}
-
+    if ($brandPathVar -and (Get-Command New-QwenBrandIcon -ErrorAction SilentlyContinue)) { $script:QwenBrandIcon = New-QwenBrandIcon -IconPath ([string]$brandPathVar.Value); $script:NotifyIcon.Icon = $script:QwenBrandIcon }
+} catch { Write-TrayRuntimeError $_ }
 $script:NotifyIcon.Visible = $true
 $script:NotifyIcon.add_DoubleClick({ if ($script:State -eq 'Running') { Open-WebUi } else { Start-QwenServer } })
 
@@ -413,41 +358,21 @@ $script:Timer.add_Tick({
         if ($script:Process) {
             $script:Process.Refresh()
             if ($script:Process.HasExited) {
-                $exitCode = $script:Process.ExitCode
-                Remove-Item -LiteralPath $script:PidPath -Force -ErrorAction SilentlyContinue
-                $script:Process = $null
-                if (-not $script:Stopping -and -not $script:ChangingLlama) {
-                    Set-LauncherState 'Error' "llama-server exited ($exitCode)"
-                    $script:NotifyIcon.ShowBalloonTip(5000, 'Qwen server stopped', "llama-server exited with code $exitCode. Open logs for details.", [System.Windows.Forms.ToolTipIcon]::Error)
-                }
+                $exitCode = $script:Process.ExitCode; Remove-Item -LiteralPath $script:PidPath -Force -ErrorAction SilentlyContinue; $script:Process = $null
+                if (-not $script:Stopping -and -not $script:ChangingLlama) { Set-LauncherState 'Error' "llama-server exited ($exitCode)"; $script:NotifyIcon.ShowBalloonTip(5000,'Qwen server stopped',"llama-server exited with code $exitCode. Open logs for details.",[System.Windows.Forms.ToolTipIcon]::Error) }
                 return
             }
         }
-
         if ($script:State -eq 'Starting') {
-            if (Test-ServerHealth) {
-                Set-LauncherState 'Running' $script:CurrentProfile
-                $script:NotifyIcon.ShowBalloonTip(2500, 'Qwen is ready', "$($script:CurrentProfile) is serving on port $($script:Config.Port).", [System.Windows.Forms.ToolTipIcon]::Info)
-            } elseif ($script:StartupDeadline -and (Get-Date) -gt $script:StartupDeadline) {
-                Set-LauncherState 'Error' 'health check timed out'
-            }
-        } elseif ($script:State -eq 'Running' -and -not (Test-ServerHealth)) {
-            Set-LauncherState 'Starting' 'health check pending'
-            $script:StartupDeadline = (Get-Date).AddSeconds(15)
-        }
-    } catch {
-        Write-TrayRuntimeError $_
-        try { Set-LauncherState 'Error' 'tray monitor error; see logs' } catch {}
-    }
+            if (Test-ServerHealth) { Set-LauncherState 'Running' $script:CurrentProfile; $script:NotifyIcon.ShowBalloonTip(2500,'Qwen is ready',"$($script:CurrentProfile) is serving on port $($script:Config.Port).",[System.Windows.Forms.ToolTipIcon]::Info) }
+            elseif ($script:StartupDeadline -and (Get-Date) -gt $script:StartupDeadline) { Set-LauncherState 'Error' 'health check timed out' }
+        } elseif ($script:State -eq 'Running' -and -not (Test-ServerHealth)) { Set-LauncherState 'Starting' 'health check pending'; $script:StartupDeadline = (Get-Date).AddSeconds(15) }
+    } catch { Write-TrayRuntimeError $_; try { Set-LauncherState 'Error' 'tray monitor error; see logs' } catch {} }
 })
 
 Set-LauncherState 'Stopped' $null
 [void](Connect-ExistingQwenServer)
 $script:Timer.Start()
 if ($StartImmediately -and -not $script:Process) { Start-QwenServer }
-
-try {
-    [System.Windows.Forms.Application]::Run()
-} finally {
-    if ($script:NotifyIcon -and $script:NotifyIcon.Visible) { Exit-Launcher }
-}
+try { [System.Windows.Forms.Application]::Run() }
+finally { if ($script:NotifyIcon -and $script:NotifyIcon.Visible) { Exit-Launcher } }
