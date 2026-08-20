@@ -14,7 +14,7 @@ try {
     Register-QwenTrayTheme
 
     . (Join-Path $PSScriptRoot 'tray-icon.ps1')
-    Register-QwenTrayIcon -PngPath (Join-Path $root 'assets\QwenLocalLauncher.png')
+    Register-QwenTrayIcon -IconPath (Join-Path $root 'assets\QwenLocalLauncher.ico')
 
     . (Join-Path $PSScriptRoot 'tray-app.ps1')
 } catch {
