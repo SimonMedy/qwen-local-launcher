@@ -15,13 +15,16 @@ $files = @(
     (Join-Path $root 'scripts\check.ps1')
 )
 foreach ($file in $files) {
-    $tokens = $null; $errors = $null
+    $tokens = $null
+    $errors = $null
     [void][System.Management.Automation.Language.Parser]::ParseFile($file,[ref]$tokens,[ref]$errors)
     if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error "${file}:$($_.Extent.StartLineNumber): $($_.Message)" } }
 }
 
 $config = Import-PowerShellDataFile -LiteralPath (Join-Path $root 'config\profiles.psd1')
-foreach ($name in @('Stable 160k','MTP 128k','Stable 180k')) { if (-not $config.Profiles.Contains($name)) { throw "Missing required profile: $name" } }
+foreach ($name in @('Stable 160k','MTP 128k','Stable 180k')) {
+    if (-not $config.Profiles.Contains($name)) { throw "Missing required profile: $name" }
+}
 function Assert-FlagValue {
     param([object[]]$ProfileArgs,[string]$Flag,[string]$Expected,[string]$Profile)
     $index = [Array]::IndexOf($ProfileArgs,$Flag)
@@ -31,13 +34,14 @@ foreach ($name in $config.Profiles.Keys) {
     $profileArgs = @($config.Profiles[$name])
     if ($profileArgs -contains '--no-mmproj') { throw "Profile '$name' disables multimodal support." }
     if ($profileArgs -contains '--fit-target') { throw "Profile '$name' must not use --fit-target." }
+    if ($profileArgs -contains '--cache-reuse') { throw "Profile '$name' must not use --cache-reuse with multimodal enabled." }
     Assert-FlagValue $profileArgs '-hf' 'unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL' $name
     Assert-FlagValue $profileArgs '-ngl' 'auto' $name
     Assert-FlagValue $profileArgs '--cache-type-k' 'q8_0' $name
     Assert-FlagValue $profileArgs '--cache-type-v' 'q4_0' $name
     Assert-FlagValue $profileArgs '--flash-attn' 'on' $name
+    Assert-FlagValue $profileArgs '--image-min-tokens' '1024' $name
     Assert-FlagValue $profileArgs '-np' '1' $name
-    Assert-FlagValue $profileArgs '--cache-reuse' '256' $name
     Assert-FlagValue $profileArgs '--cache-ram' '4096' $name
     Assert-FlagValue $profileArgs '-t' '8' $name
     Assert-FlagValue $profileArgs '-tb' '16' $name
@@ -59,21 +63,60 @@ if (@($config.Profiles['MTP 128k']) -notcontains '--no-mmproj-offload') { throw 
 if (@($config.Profiles['MTP 128k']) -contains '--spec-draft-p-min') { throw 'MTP 128k must not use the old --spec-draft-p-min setting.' }
 
 $tray = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-app.ps1') -Raw
-foreach ($needle in @('Get-ProcessTreeIds','Runtime diagnostics','ProfileOrder','--metrics','QwenPopupForm')) { if ($tray -notmatch [regex]::Escape($needle)) { throw "Tray missing expected behavior: $needle" } }
+foreach ($needle in @('Get-ProcessTreeIds','Invoke-TaskKillSafe','Runtime diagnostics','ProfileOrder','--metrics','QwenPopupForm')) {
+    if ($tray -notmatch [regex]::Escape($needle)) { throw "Tray missing expected behavior: $needle" }
+}
 if ($tray -match 'ContextMenuStrip|ToolStripMenuItem') { throw 'Tray must use the custom borderless popup instead of ToolStrip menus.' }
+
 $theme = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-theme.ps1') -Raw
-foreach ($needle in @('QwenPopupForm','QwenMenuButton','TextRenderer','DwmSetWindowAttribute')) { if ($theme -notmatch [regex]::Escape($needle)) { throw "Theme missing expected popup primitive: $needle" } }
+foreach ($needle in @('QwenPopupForm','QwenMenuButton','TextRenderer','DwmSetWindowAttribute')) {
+    if ($theme -notmatch [regex]::Escape($needle)) { throw "Theme missing expected popup primitive: $needle" }
+}
 if ($theme -match '[^\x00-\x7F]') { throw 'Tray theme must remain ASCII-only for Windows PowerShell 5.1 compatibility.' }
-$diag = Get-Content -LiteralPath (Join-Path $root 'scripts\runtime-diagnostics.ps1') -Raw
-foreach ($needle in @('/health','/slots','/metrics','/v1/models','GPUProcessMemory','CommittedBytes','KV buffer size','compute buffer size','offload','speculat')) { if ($diag -notmatch [regex]::Escape($needle)) { throw "Diagnostics missing expected signal: $needle" } }
-if ($diag -match '[^\x00-\x7F]') { throw 'Runtime diagnostics must remain ASCII-only for Windows PowerShell 5.1 compatibility.' }
 if ($tray -match '[^\x00-\x7F]') { throw 'Tray app must remain ASCII-only for Windows PowerShell 5.1 compatibility.' }
+
+$diagPath = Join-Path $root 'scripts\runtime-diagnostics.ps1'
+$diag = Get-Content -LiteralPath $diagPath -Raw
+foreach ($needle in @('/health','/slots','/metrics','GPUProcessMemory','CommittedBytes','model buffer size','KV buffer size','compute buffer size','GPU layers','mmproj backend','SelfTest','runtime-diagnostics-error.log')) {
+    if ($diag -notmatch [regex]::Escape($needle)) { throw "Diagnostics missing expected signal: $needle" }
+}
+if ($diag -match '[^\x00-\x7F]') { throw 'Runtime diagnostics must remain ASCII-only for Windows PowerShell 5.1 compatibility.' }
 
 . (Join-Path $root 'scripts\tray-theme.ps1')
 $smoke = New-QwenPopupForm
 $smokeButton = New-QwenPopupButton 'Smoke test'
 $smoke.Controls.Add($smokeButton)
 $smoke.Dispose()
+
+$diagEscaped = $diagPath.Replace("'", "''")
+$rootEscaped = $root.Replace("'", "''")
+$selfTestScript = @"
+`$culture = [Globalization.CultureInfo]::InvariantCulture.Clone()
+`$culture.NumberFormat.NumberGroupSeparator = ''
+[Threading.Thread]::CurrentThread.CurrentCulture = `$culture
+& '$diagEscaped' -Root '$rootEscaped' -SelfTest
+"@
+$encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($selfTestScript))
+$psi = New-Object Diagnostics.ProcessStartInfo
+$psi.FileName = 'powershell.exe'
+$psi.Arguments = "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $encoded"
+$psi.UseShellExecute = $false
+$psi.CreateNoWindow = $true
+$psi.RedirectStandardOutput = $true
+$psi.RedirectStandardError = $true
+$selfTestProcess = New-Object Diagnostics.Process
+$selfTestProcess.StartInfo = $psi
+[void]$selfTestProcess.Start()
+if (-not $selfTestProcess.WaitForExit(15000)) {
+    try { $selfTestProcess.Kill() } catch {}
+    throw 'Runtime diagnostics self-test timed out.'
+}
+$selfTestStdout = $selfTestProcess.StandardOutput.ReadToEnd()
+$selfTestStderr = $selfTestProcess.StandardError.ReadToEnd()
+$selfTestExit = $selfTestProcess.ExitCode
+$selfTestProcess.Dispose()
+if ($selfTestExit -ne 0) { throw "Runtime diagnostics self-test failed ($selfTestExit). $selfTestStderr $selfTestStdout" }
+if ($selfTestStdout -notmatch 'Runtime diagnostics self-test passed') { throw "Runtime diagnostics self-test did not report success. $selfTestStdout" }
 
 $iconPath = Join-Path $root 'assets\QwenLocalLauncher.ico'
 if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) { throw 'Missing versioned assets/QwenLocalLauncher.ico.' }
