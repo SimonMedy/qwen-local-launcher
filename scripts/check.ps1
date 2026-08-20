@@ -49,62 +49,58 @@ function Assert-NoFlag {
 }
 
 $stable = @($config.Profiles['Stable 160k'])
-foreach ($pair in @(
-    @('-hf','unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL'),
-    @('-c','50000'),
-    @('-ngl','auto'),
-    @('--cache-type-k','q8_0'),
-    @('--cache-type-v','q4_0'),
-    @('--flash-attn','on'),
-    @('--image-min-tokens','1024'),
-    @('-np','1'),
-    @('--cache-ram','2048'),
-    @('-b','1024'),
-    @('-ub','512'),
-    @('-t','8'),
-    @('-tb','16'),
-    @('--temp','1.0'),
-    @('--top-p','0.95'),
-    @('--top-k','20'),
-    @('--min-p','0.0'),
-    @('--presence-penalty','0.0'),
-    @('--repeat-penalty','1.0')
-)) { Assert-FlagValue $stable $pair[0] $pair[1] 'Stable 160k' }
+Assert-FlagValue $stable '-hf' 'unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL' 'Stable 160k'
+Assert-FlagValue $stable '-c' '50000' 'Stable 160k'
+Assert-FlagValue $stable '-ngl' 'auto' 'Stable 160k'
+Assert-FlagValue $stable '--cache-type-k' 'q8_0' 'Stable 160k'
+Assert-FlagValue $stable '--cache-type-v' 'q4_0' 'Stable 160k'
+Assert-FlagValue $stable '--flash-attn' 'on' 'Stable 160k'
+Assert-FlagValue $stable '--image-min-tokens' '1024' 'Stable 160k'
+Assert-FlagValue $stable '-np' '1' 'Stable 160k'
+Assert-FlagValue $stable '--cache-ram' '2048' 'Stable 160k'
+Assert-FlagValue $stable '-b' '1024' 'Stable 160k'
+Assert-FlagValue $stable '-ub' '512' 'Stable 160k'
+Assert-FlagValue $stable '-t' '8' 'Stable 160k'
+Assert-FlagValue $stable '-tb' '16' 'Stable 160k'
+Assert-FlagValue $stable '--temp' '1.0' 'Stable 160k'
+Assert-FlagValue $stable '--top-p' '0.95' 'Stable 160k'
+Assert-FlagValue $stable '--top-k' '20' 'Stable 160k'
+Assert-FlagValue $stable '--min-p' '0.0' 'Stable 160k'
+Assert-FlagValue $stable '--presence-penalty' '0.0' 'Stable 160k'
+Assert-FlagValue $stable '--repeat-penalty' '1.0' 'Stable 160k'
 foreach ($flag in @('--no-mmproj-offload','--reasoning-preserve')) { Assert-Flag $stable $flag 'Stable 160k' }
 foreach ($flag in @('--no-mmproj','--cache-reuse','--fit-ctx','--fit-target','-lv')) { Assert-NoFlag $stable $flag 'Stable 160k' }
 
 $mtp = @($config.Profiles['MTP Tuned'])
-foreach ($pair in @(
-    @('-hf','unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL'),
-    @('-c','50000'),
-    @('-ngl','auto'),
-    @('--fit-target','512'),
-    @('--cache-type-k','q5_1'),
-    @('--cache-type-v','q5_1'),
-    @('--flash-attn','on'),
-    @('--image-min-tokens','1024'),
-    @('-np','1'),
-    @('-b','1024'),
-    @('-ub','128'),
-    @('--cache-ram','2048'),
-    @('--ctx-checkpoints','64'),
-    @('-t','8'),
-    @('-tb','16'),
-    @('--spec-type','draft-mtp,ngram-mod'),
-    @('--spec-draft-n-max','2'),
-    @('--spec-draft-p-min','0.82'),
-    @('--spec-draft-type-k','q4_0'),
-    @('--spec-draft-type-v','q4_0'),
-    @('--spec-ngram-mod-n-match','24'),
-    @('--spec-ngram-mod-n-min','48'),
-    @('--spec-ngram-mod-n-max','64'),
-    @('--temp','1.0'),
-    @('--top-p','0.95'),
-    @('--top-k','20'),
-    @('--min-p','0.0'),
-    @('--presence-penalty','0.0'),
-    @('--repeat-penalty','1.0')
-)) { Assert-FlagValue $mtp $pair[0] $pair[1] 'MTP Tuned' }
+Assert-FlagValue $mtp '-hf' 'unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL' 'MTP Tuned'
+Assert-FlagValue $mtp '-c' '50000' 'MTP Tuned'
+Assert-FlagValue $mtp '-ngl' 'auto' 'MTP Tuned'
+Assert-FlagValue $mtp '--fit-target' '512' 'MTP Tuned'
+Assert-FlagValue $mtp '--cache-type-k' 'q5_1' 'MTP Tuned'
+Assert-FlagValue $mtp '--cache-type-v' 'q5_1' 'MTP Tuned'
+Assert-FlagValue $mtp '--flash-attn' 'on' 'MTP Tuned'
+Assert-FlagValue $mtp '--image-min-tokens' '1024' 'MTP Tuned'
+Assert-FlagValue $mtp '-np' '1' 'MTP Tuned'
+Assert-FlagValue $mtp '-b' '1024' 'MTP Tuned'
+Assert-FlagValue $mtp '-ub' '128' 'MTP Tuned'
+Assert-FlagValue $mtp '--cache-ram' '2048' 'MTP Tuned'
+Assert-FlagValue $mtp '--ctx-checkpoints' '64' 'MTP Tuned'
+Assert-FlagValue $mtp '-t' '8' 'MTP Tuned'
+Assert-FlagValue $mtp '-tb' '16' 'MTP Tuned'
+Assert-FlagValue $mtp '--spec-type' 'draft-mtp,ngram-mod' 'MTP Tuned'
+Assert-FlagValue $mtp '--spec-draft-n-max' '2' 'MTP Tuned'
+Assert-FlagValue $mtp '--spec-draft-p-min' '0.82' 'MTP Tuned'
+Assert-FlagValue $mtp '--spec-draft-type-k' 'q4_0' 'MTP Tuned'
+Assert-FlagValue $mtp '--spec-draft-type-v' 'q4_0' 'MTP Tuned'
+Assert-FlagValue $mtp '--spec-ngram-mod-n-match' '24' 'MTP Tuned'
+Assert-FlagValue $mtp '--spec-ngram-mod-n-min' '48' 'MTP Tuned'
+Assert-FlagValue $mtp '--spec-ngram-mod-n-max' '64' 'MTP Tuned'
+Assert-FlagValue $mtp '--temp' '1.0' 'MTP Tuned'
+Assert-FlagValue $mtp '--top-p' '0.95' 'MTP Tuned'
+Assert-FlagValue $mtp '--top-k' '20' 'MTP Tuned'
+Assert-FlagValue $mtp '--min-p' '0.0' 'MTP Tuned'
+Assert-FlagValue $mtp '--presence-penalty' '0.0' 'MTP Tuned'
+Assert-FlagValue $mtp '--repeat-penalty' '1.0' 'MTP Tuned'
 foreach ($flag in @('--no-mmproj-offload','--reasoning-preserve')) { Assert-Flag $mtp $flag 'MTP Tuned' }
 foreach ($flag in @('--no-mmproj','--cache-reuse','--fit-ctx','-lv')) { Assert-NoFlag $mtp $flag 'MTP Tuned' }
 
@@ -117,7 +113,7 @@ $diag = Get-Content -LiteralPath $diagPath -Raw
 if ($bootstrap -notmatch 'JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE') { throw 'Bootstrap must keep the Windows Job Object.' }
 if ($tray -match 'ContextMenuStrip|ToolStripMenuItem') { throw 'Tray must use the custom popup.' }
 if ($iconScript -match 'Procesps') { throw 'tray-icon contains the invalid Procesps typo.' }
-foreach ($needle in @('/slots','/metrics','GPUProcessMemory','Requested context','GPU layers','mmproj backend','SelfTest')) {
+foreach ($needle in @('/slots','/metrics','GPUProcessMemory','Requested context','GPU Layers','mmproj backend','SelfTest')) {
     if ($diag -notmatch [regex]::Escape($needle)) { throw "Diagnostics missing expected signal: $needle" }
 }
 foreach ($text in @($bootstrap,$tray,$iconScript,$diag)) {
