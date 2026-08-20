@@ -41,7 +41,7 @@ function Assert-ExactProfile {
     }
     for ($i = 0; $i -lt $Expected.Count;$i++) {
         if ([string]$Actual[$i] -ne [string]$Expected[$i]) {
-            throw "Profile '$Name' differs at index $i: actual='$($Actual[$i])', expected='$($Expected[$i])'."
+            throw "Profile '$Name' differs at index ${i}: actual='$($Actual[$i])', expected='$($Expected[$i])'."
         }
     }
 }
@@ -116,7 +116,7 @@ $diag = Get-Content -LiteralPath $diagPath -Raw
 if ($bootstrap -notmatch 'JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE') { throw 'Bootstrap must keep the Windows Job Object.' }
 if ($tray -match 'ContextMenuStrip|ToolStripMenuItem') { throw 'Tray must use the custom popup.' }
 if ($iconScript -match 'Procesps') { throw 'tray-icon contains the invalid Procesps typo.' }
-foreach ($needle in @('/slots','/metrics','GPUProcessMemory','Requested context','GPU layers','mmproj backend','SelfTest')) {
+foreach ($needle in @('/slots','/metrics','GPUProcessMemory','Requested context','GPU Layers','mmproj backend','SelfTest')) {
     if ($diag -notmatch [regex]::Escape($needle)) { throw "Diagnostics missing expected signal: $needle" }
 }
 foreach ($text in @($bootstrap,$tray,$iconScript,$diag)) {
