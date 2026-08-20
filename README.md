@@ -6,18 +6,16 @@ A native-feeling Windows system-tray launcher for running Qwen locally with `lla
 
 ## Current target
 
-The launcher targets `unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL`. Stable 160k is the default profile; MTP 128k trades context for speculative decoding headroom. Multimodal support remains enabled in both profiles.
+The launcher targets `unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL` and now uses MTP exclusively. `MTP 104K` is the default profile, with `MTP 112K` available as a more aggressive context/speculative variant. Multimodal support remains enabled in both profiles.
 
 ### Included profiles
 
-| Profile | Context | MTP | KV cache | Batch |
+| Profile | Context | Draft | N-gram | KV cache |
 | --- | ---: | --- | --- | --- |
-| Stable 160k | 160,000 | Off | K `q8_0`, V `q4_0` | `-b 1024 -ub 128` |
-| MTP 128k | 131,072 | `draft-mtp`, max 2, draft K/V `q4_0` | K `q8_0`, V `q4_0` | `-b 1024 -ub 128` |
+| MTP 104K | 106,496 | max 2, p-min 0.82 | match 24, min 48, max 64 | K/V `q5_1` |
+| MTP 112K | 114,688 | max 3, p-min 0.75 | match 24, min 8, max 32 | K/V `q5_1` |
 
-Both profiles use `-ngl auto`, Flash Attention, `-np 1`, `--cache-ram 4096`, `-t 8 -tb 16`, `--reasoning-preserve`, `--image-min-tokens 1024`, and `--no-mmproj-offload`. The multimodal projector therefore stays enabled but runs on CPU to preserve dedicated VRAM for model layers and long context.
-
-Each profile keeps an explicit context (`-c`) and matching `--fit-ctx` floor. Detailed llama.cpp logging is enabled with `-lv 4` so Runtime diagnostics can recover allocation and offload information from the real startup log.
+Both profiles use `-ngl auto`, `--fit-target 512`, Flash Attention, `--image-min-tokens 1024`, `--no-mmproj-offload`, `-np 1`, `-b 1024`, `-ub 128`, `--cache-ram 2048`, `--ctx-checkpoints 64`, `-t 8`, `-tb 16`, `--spec-type draft-mtp,ngram-mod`, draft K/V `q4_0`, and `--reasoning-preserve`.
 
 Sampling defaults are `--temp 1.0 --top-p 0.95 --top-k 20 --min-p 0.0 --presence-penalty 0.0 --repeat-penalty 1.0`.
 
@@ -39,31 +37,16 @@ Sampling defaults are `--temp 1.0 --top-p 0.95 --top-k 20 --min-p 0.0 --presence
 
 ## Runtime diagnostics
 
-`Runtime diagnostics` combines live Windows counters with llama.cpp's own endpoints and startup logs.
+`Runtime diagnostics` combines live Windows counters with llama.cpp's own endpoints and startup logs. It can expose process memory, dedicated/shared GPU memory, system RAM/commit, requested/runtime context, batch/ubatch, GPU/CPU model buffers, KV cache, compute/output buffers, GPU layer offload, mmproj backend, and speculative/MTP metrics when the corresponding data is emitted by llama.cpp.
 
-The `Overview` and `Memory / offload` tabs expose, when available:
-
-- process working set and private memory;
-- dedicated VRAM and shared GPU memory attributed to the server PID;
-- system RAM and commit usage;
-- requested context, `--fit-ctx` floor, and runtime context;
-- requested/runtime `n_batch` and `n_ubatch`;
-- GPU/CPU model buffers;
-- GPU/CPU KV cache buffers;
-- GPU/CPU compute and output buffers;
-- GPU layer offload count;
-- mmproj path/backend and MTP/speculative state.
-
-Missing startup-log data is shown as `not captured in current log` instead of a misleading zero. The `Performance` tab reads llama.cpp Prometheus metrics; request/token counters naturally remain zero until inference traffic occurs.
-
-Raw per-run logs remain the source of truth under `logs\*.stderr.log`. The tray also maintains `logs\latest-runtime-summary.txt` with the latest launch command and tuning-relevant llama.cpp lines.
+Missing startup-log data is shown as `not captured in current log` rather than a misleading zero. Raw per-run stderr logs remain the source of truth under `logs\*.stderr.log`, and the tray maintains `logs\latest-runtime-summary.txt` for tuning-relevant lines.
 
 ## Requirements
 
 - Windows 10/11.
 - Windows PowerShell 5.1 or newer.
-- A recent `llama.cpp` build containing `llama-server.exe` and the backend you want to use (for example Vulkan or HIP/ROCm).
-- Enough VRAM/RAM for the model, KV cache, context, and optional MTP state.
+- A recent `llama.cpp` build containing `llama-server.exe` and the backend you want to use.
+- Enough VRAM/RAM for the model, KV cache, context, and MTP state.
 
 ## Setup
 
@@ -102,7 +85,7 @@ The launcher adds `--host`, `--port`, and `--metrics` itself. Keep model/runtime
 
 ## Benchmark roadmap
 
-Useful comparisons include Vulkan vs HIP/ROCm, Stable vs MTP, context pressure, batch/ubatch tuning, VRAM/RAM, prompt processing tok/s, generation tok/s, TTFT, MTP acceptance rate, actual GPU layer offload, and multimodal stability.
+Useful comparisons include context pressure, speculative acceptance rate, VRAM/RAM, prompt-processing tok/s, generation tok/s, TTFT, actual GPU layer offload, and multimodal stability.
 
 ## Development
 
@@ -112,7 +95,7 @@ Static validation runs on `windows-latest` in GitHub Actions:
 .\scripts\check.ps1
 ```
 
-The check parses the PowerShell scripts, validates profile invariants, smoke-tests the custom popup, exercises the diagnostics parser, and builds the Windows launcher.
+The check parses the PowerShell scripts, validates both MTP profiles argument-for-argument, smoke-tests the custom popup, exercises the diagnostics parser, and builds the Windows launcher.
 
 ## Safety / privacy
 
