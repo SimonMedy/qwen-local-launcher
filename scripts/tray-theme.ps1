@@ -2,7 +2,7 @@
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-if (-not ('QwenMenuRenderer' -as [type])) {
+if (-not ('QwenPopupForm' -as [type])) {
     Add-Type -ReferencedAssemblies @('System.Drawing.dll','System.Windows.Forms.dll') -TypeDefinition @"
 using System;
 using System.Drawing;
@@ -10,71 +10,128 @@ using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-public sealed class QwenMenuRenderer : ToolStripProfessionalRenderer
+public sealed class QwenPopupForm : Form
 {
-    private static readonly Color Surface = Color.FromArgb(25, 26, 29);
-    private static readonly Color Hover = Color.FromArgb(39, 41, 46);
-    private static readonly Color Text = Color.FromArgb(245, 246, 247);
-    private static readonly Color Muted = Color.FromArgb(157, 163, 173);
-    private static readonly Color Disabled = Color.FromArgb(92, 97, 106);
-    private static readonly Color Divider = Color.FromArgb(53, 56, 63);
-    private static readonly Color Accent = Color.FromArgb(90, 183, 255);
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
 
-    public QwenMenuRenderer() : base(new ProfessionalColorTable()) { RoundedEdges = false; }
-
-    protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e) { e.Graphics.Clear(Surface); }
-    protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e) { }
-
-    protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
+    public QwenPopupForm()
     {
-        if (!e.Item.Selected || !e.Item.Enabled) return;
-        var rect = new Rectangle(4, 2, Math.Max(0, e.Item.Width - 8), Math.Max(0, e.Item.Height - 4));
-        using (var path = RoundedRect(rect, 7))
-        using (var brush = new SolidBrush(Hover)) {
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            e.Graphics.FillPath(brush, path);
+        FormBorderStyle = FormBorderStyle.None;
+        ShowInTaskbar = false;
+        StartPosition = FormStartPosition.Manual;
+        BackColor = Color.FromArgb(24, 25, 28);
+        ForeColor = Color.FromArgb(242, 243, 245);
+        DoubleBuffered = true;
+        AutoScaleMode = AutoScaleMode.Dpi;
+        TopMost = true;
+    }
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            CreateParams cp = base.CreateParams;
+            cp.ClassStyle |= 0x00020000;
+            return cp;
         }
     }
 
-    protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
+    protected override void OnShown(EventArgs e)
     {
-        using (var pen = new Pen(Divider)) {
-            int y = e.Item.Height / 2;
-            e.Graphics.DrawLine(pen, 12, y, Math.Max(12, e.Item.Width - 12), y);
+        base.OnShown(e);
+        try
+        {
+            int dark = 1;
+            DwmSetWindowAttribute(Handle, 20, ref dark, sizeof(int));
+            int corner = 2;
+            DwmSetWindowAttribute(Handle, 33, ref corner, sizeof(int));
+            int noBorder = unchecked((int)0xFFFFFFFE);
+            DwmSetWindowAttribute(Handle, 34, ref noBorder, sizeof(int));
+        }
+        catch { }
+    }
+}
+
+public sealed class QwenMenuButton : Control
+{
+    private bool hovered;
+    private bool isChecked;
+    private bool showChevron;
+    private string secondaryText = "";
+
+    public bool IsChecked { get { return isChecked; } set { isChecked = value; Invalidate(); } }
+    public bool ShowChevron { get { return showChevron; } set { showChevron = value; Invalidate(); } }
+    public string SecondaryText { get { return secondaryText; } set { secondaryText = value ?? ""; Invalidate(); } }
+
+    public QwenMenuButton()
+    {
+        Height = 40;
+        Cursor = Cursors.Hand;
+        BackColor = Color.Transparent;
+        ForeColor = Color.FromArgb(242, 243, 245);
+        DoubleBuffered = true;
+        SetStyle(ControlStyles.SupportsTransparentBackColor | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
+    }
+
+    protected override void OnMouseEnter(EventArgs e) { hovered = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { hovered = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnEnabledChanged(EventArgs e) { Invalidate(); base.OnEnabledChanged(e); }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        if (hovered && Enabled)
+        {
+            Rectangle r = new Rectangle(0, 1, Width - 1, Height - 2);
+            using (GraphicsPath path = Rounded(r, 8))
+            using (SolidBrush brush = new SolidBrush(Color.FromArgb(42, 43, 47)))
+                e.Graphics.FillPath(brush, path);
+        }
+
+        Color primary = Enabled ? ForeColor : Color.FromArgb(100, 104, 112);
+        Color secondary = Enabled ? Color.FromArgb(156, 163, 175) : Color.FromArgb(82, 86, 94);
+        Rectangle textRect = new Rectangle(12, 0, Math.Max(20, Width - 112), Height);
+        TextRenderer.DrawText(e.Graphics, Text, Font, textRect, primary,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+
+        if (!String.IsNullOrEmpty(secondaryText))
+        {
+            Rectangle secondaryRect = new Rectangle(Math.Max(110, Width - 150), 0, 118, Height);
+            TextRenderer.DrawText(e.Graphics, secondaryText, Font, secondaryRect, secondary,
+                TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+        }
+
+        if (showChevron)
+        {
+            using (Pen pen = new Pen(secondary, 1.8f))
+            {
+                pen.StartCap = LineCap.Round;
+                pen.EndCap = LineCap.Round;
+                int x = Width - 19;
+                int y = Height / 2;
+                e.Graphics.DrawLine(pen, x - 3, y - 4, x + 1, y);
+                e.Graphics.DrawLine(pen, x + 1, y, x - 3, y + 4);
+            }
+        }
+
+        if (isChecked)
+        {
+            using (Pen pen = new Pen(Color.FromArgb(88, 184, 255), 2.0f))
+            {
+                pen.StartCap = LineCap.Round;
+                pen.EndCap = LineCap.Round;
+                int x = Width - 23;
+                int y = Height / 2;
+                e.Graphics.DrawLine(pen, x - 6, y, x - 2, y + 4);
+                e.Graphics.DrawLine(pen, x - 2, y + 4, x + 5, y - 5);
+            }
         }
     }
 
-    protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+    private static GraphicsPath Rounded(Rectangle r, int radius)
     {
-        if (Equals(e.Item.Tag, "qwen-header")) e.TextColor = Text;
-        else if (Equals(e.Item.Tag, "qwen-subtle")) e.TextColor = Muted;
-        else e.TextColor = e.Item.Enabled ? Text : Disabled;
-        base.OnRenderItemText(e);
-    }
-
-    protected override void OnRenderArrow(ToolStripArrowRenderEventArgs e)
-    {
-        e.ArrowColor = e.Item.Enabled ? Muted : Disabled;
-        base.OnRenderArrow(e);
-    }
-
-    protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
-    {
-        if (!(e.Item is ToolStripMenuItem) || !((ToolStripMenuItem)e.Item).Checked) return;
-        var g = e.Graphics;
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        int x = Math.Max(8, e.Item.Width - 27);
-        int y = e.Item.Height / 2;
-        using (var pen = new Pen(Accent, 2.0f)) {
-            pen.StartCap = LineCap.Round;
-            pen.EndCap = LineCap.Round;
-            g.DrawLines(pen, new [] { new Point(x, y), new Point(x + 4, y + 4), new Point(x + 11, y - 4) });
-        }
-    }
-
-    private static GraphicsPath RoundedRect(Rectangle r, int radius)
-    {
-        var path = new GraphicsPath();
+        GraphicsPath path = new GraphicsPath();
         int d = radius * 2;
         path.AddArc(r.Left, r.Top, d, d, 180, 90);
         path.AddArc(r.Right - d, r.Top, d, d, 270, 90);
@@ -84,108 +141,77 @@ public sealed class QwenMenuRenderer : ToolStripProfessionalRenderer
         return path;
     }
 }
-
-public static class QwenDwmMenu
-{
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
-
-    public static void Apply(IntPtr hwnd, int borderColorRef)
-    {
-        if (hwnd == IntPtr.Zero) return;
-        try {
-            int corner = 2; // DWMWCP_ROUND
-            DwmSetWindowAttribute(hwnd, 33, ref corner, sizeof(int));
-            int border = borderColorRef;
-            DwmSetWindowAttribute(hwnd, 34, ref border, sizeof(int));
-        } catch { }
-    }
-}
 "@
 }
 
-$script:QwenMenuRenderer = New-Object QwenMenuRenderer
-$script:QwenSurface = [System.Drawing.Color]::FromArgb(25, 26, 29)
-$script:QwenText = [System.Drawing.Color]::FromArgb(245, 246, 247)
-$script:QwenBorderColorRef = (58 -bor (60 -shl 8) -bor (67 -shl 16))
+$script:QwenSurface = [Drawing.Color]::FromArgb(24, 25, 28)
+$script:QwenText = [Drawing.Color]::FromArgb(242, 243, 245)
+$script:QwenMuted = [Drawing.Color]::FromArgb(156, 163, 175)
+$script:QwenDivider = [Drawing.Color]::FromArgb(58, 60, 67)
+$script:QwenAccent = [Drawing.Color]::FromArgb(88, 184, 255)
+$script:QwenDanger = [Drawing.Color]::FromArgb(242, 102, 116)
 
-function Set-QwenDropDownTheme {
-    param([Parameter(Mandatory)][System.Windows.Forms.ToolStripDropDown]$DropDown)
-
-    $DropDown.Renderer = $script:QwenMenuRenderer
-    $DropDown.BackColor = $script:QwenSurface
-    $DropDown.ForeColor = $script:QwenText
-    $DropDown.Padding = New-Object System.Windows.Forms.Padding(6, 6, 6, 6)
-    $DropDown.Font = New-Object System.Drawing.Font('Segoe UI', 10)
-    if ($DropDown -is [System.Windows.Forms.ToolStripDropDownMenu]) {
-        $DropDown.ShowImageMargin = $false
-        $DropDown.ShowCheckMargin = $false
-    }
-
-    foreach ($item in $DropDown.Items) {
-        if ($item -is [System.Windows.Forms.ToolStripSeparator]) {
-            $item.Margin = New-Object System.Windows.Forms.Padding(0, 4, 0, 4)
-            continue
-        }
-        $item.Padding = New-Object System.Windows.Forms.Padding(10, 6, 28, 6)
-        if ($item -is [System.Windows.Forms.ToolStripMenuItem]) {
-            $item.DropDown.Renderer = $script:QwenMenuRenderer
-            $item.add_DropDownOpening({ Set-QwenDropDownTheme -DropDown $this.DropDown })
-            $item.add_DropDownOpened({
-                Set-QwenDropDownTheme -DropDown $this.DropDown
-                [QwenDwmMenu]::Apply($this.DropDown.Handle, $script:QwenBorderColorRef)
-            })
-        }
-    }
+function Get-QwenUIFontName {
+    try {
+        $fonts = New-Object Drawing.Text.InstalledFontCollection
+        if ($fonts.Families.Name -contains 'Segoe UI Variable Text') { return 'Segoe UI Variable Text' }
+    } catch {}
+    return 'Segoe UI'
 }
 
-function Set-QwenMenuTheme {
-    param([Parameter(Mandatory)][System.Windows.Forms.ContextMenuStrip]$Menu)
+function New-QwenPopupForm {
+    $form = New-Object QwenPopupForm
+    $form.Width = 360
+    $form.BackColor = $script:QwenSurface
+    $form.ForeColor = $script:QwenText
+    $form.Font = New-Object Drawing.Font((Get-QwenUIFontName), 10)
+    return $form
+}
 
-    $Menu.Renderer = $script:QwenMenuRenderer
-    $Menu.BackColor = $script:QwenSurface
-    $Menu.ForeColor = $script:QwenText
-    $Menu.ShowImageMargin = $false
-    $Menu.ShowCheckMargin = $false
-    $Menu.ShowItemToolTips = $true
-    $Menu.DropShadowEnabled = $true
-    $Menu.Padding = New-Object System.Windows.Forms.Padding(7, 7, 7, 7)
-    $Menu.Font = New-Object System.Drawing.Font('Segoe UI', 10)
-    $Menu.MinimumSize = New-Object System.Drawing.Size(320, 0)
+function New-QwenPopupLabel {
+    param([string]$Text, [float]$Size = 10, [bool]$Bold = $false, [Drawing.Color]$Color = $script:QwenText)
+    $label = New-Object Windows.Forms.Label
+    $label.Text = $Text
+    $label.AutoEllipsis = $true
+    $label.UseCompatibleTextRendering = $false
+    $label.BackColor = $script:QwenSurface
+    $label.ForeColor = $Color
+    $style = if ($Bold) { [Drawing.FontStyle]::Bold } else { [Drawing.FontStyle]::Regular }
+    $label.Font = New-Object Drawing.Font((Get-QwenUIFontName), $Size, $style)
+    return $label
+}
 
-    if ($Menu.Items.Count -gt 0) {
-        $Menu.Items[0].Tag = 'qwen-header'
-        $Menu.Items[0].Font = New-Object System.Drawing.Font('Segoe UI Semibold', 10.5)
-        $Menu.Items[0].Padding = New-Object System.Windows.Forms.Padding(10, 7, 20, 4)
-    }
-    if ($Menu.Items.Count -gt 1 -and -not ($Menu.Items[1] -is [System.Windows.Forms.ToolStripSeparator])) {
-        $Menu.Items[1].Tag = 'qwen-subtle'
-        $Menu.Items[1].Font = New-Object System.Drawing.Font('Segoe UI', 9)
-        $Menu.Items[1].Padding = New-Object System.Windows.Forms.Padding(10, 1, 20, 7)
-    }
+function New-QwenPopupButton {
+    param([string]$Text, [string]$SecondaryText = '', [switch]$Chevron)
+    $button = New-Object QwenMenuButton
+    $button.Text = $Text
+    $button.SecondaryText = $SecondaryText
+    $button.ShowChevron = $Chevron.IsPresent
+    $button.Font = New-Object Drawing.Font((Get-QwenUIFontName), 10)
+    return $button
+}
 
-    Set-QwenDropDownTheme -DropDown $Menu
+function New-QwenPopupDivider {
+    $divider = New-Object Windows.Forms.Panel
+    $divider.Height = 1
+    $divider.BackColor = $script:QwenDivider
+    return $divider
+}
 
-    $startup = $Menu.Items | Where-Object { $_ -is [System.Windows.Forms.ToolStripMenuItem] -and $_.Text -match '^(Start with Windows|Launch at Windows startup)' } | Select-Object -First 1
-    if ($startup) { $startup.ToolTipText = 'Launches only the tray app when you sign in. It does not start the model.' }
-
-    $Menu.add_Opening({
-        Set-QwenDropDownTheme -DropDown $this
-        $startupItem = $this.Items | Where-Object { $_ -is [System.Windows.Forms.ToolStripMenuItem] -and $_.Text -match '^(Start with Windows|Launch at Windows startup)' } | Select-Object -First 1
-        if ($startupItem) { $startupItem.Text = if ($startupItem.Checked) { 'Launch at Windows startup  ✓' } else { 'Launch at Windows startup' } }
-    })
-    $Menu.add_Opened({ [QwenDwmMenu]::Apply($this.Handle, $script:QwenBorderColorRef) })
+function Show-QwenPopupAtCursor {
+    param([Parameter(Mandatory)][Windows.Forms.Form]$Form)
+    $point = [Windows.Forms.Cursor]::Position
+    $screen = [Windows.Forms.Screen]::FromPoint($point).WorkingArea
+    $x = $point.X - $Form.Width + 14
+    $y = $point.Y - $Form.Height - 12
+    if ($x -lt $screen.Left + 6) { $x = $screen.Left + 6 }
+    if ($x + $Form.Width -gt $screen.Right - 6) { $x = $screen.Right - $Form.Width - 6 }
+    if ($y -lt $screen.Top + 6) { $y = [Math]::Min($point.Y + 12, $screen.Bottom - $Form.Height - 6) }
+    $Form.Location = New-Object Drawing.Point($x, $y)
+    if (-not $Form.Visible) { $Form.Show() }
+    $Form.Activate()
 }
 
 function Register-QwenTrayTheme {
-    $script:QwenThemeApplied = $false
-    $handler = [System.EventHandler]{
-        if ($script:QwenThemeApplied) { return }
-        $menuVar = Get-Variable -Name Menu -Scope Script -ErrorAction SilentlyContinue
-        if ($menuVar -and $menuVar.Value -is [System.Windows.Forms.ContextMenuStrip]) {
-            Set-QwenMenuTheme -Menu $menuVar.Value
-            $script:QwenThemeApplied = $true
-        }
-    }
-    [System.Windows.Forms.Application]::add_Idle($handler)
+    # Theme helpers are loaded by tray-bootstrap. The popup is built by tray-app.
 }
