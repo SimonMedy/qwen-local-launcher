@@ -6,13 +6,13 @@ A native-feeling Windows system-tray launcher for running Qwen locally with `lla
 
 ## Current target
 
-The launcher targets `unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL` and uses MTP exclusively. `MTP 104K` is the default profile, with `MTP 112K` available as a more aggressive context/speculative variant. Multimodal support remains enabled in both profiles.
+The launcher targets `unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL` and uses MTP exclusively. `MTP 104K` is the default profile, with `MTP 112K` available as a more aggressive context variant. Multimodal support remains enabled in both profiles.
 
 ### Included profiles
 
 | Profile | Context | Draft | N-gram | KV cache |
 | --- | ---: | --- | --- | --- |
-| MTP 104K | 106,496 | max 2, p-min 0.82 | match 24, min 48, max 64 | K/V `q5_1` |
+| MTP 104K | 106,496 | max 3, p-min 0.75 | match 24, min 8, max 32 | K/V `q5_1` |
 | MTP 112K | 114,688 | max 3, p-min 0.75 | match 24, min 8, max 32 | K/V `q5_1` |
 
 Both profiles use `-ngl auto`, `--fit-target 512`, Flash Attention, `--image-min-tokens 1024`, `--no-mmproj-offload`, `-np 1`, `-b 1024`, `-ub 128`, `--cache-ram 2048`, `--ctx-checkpoints 64`, `-t 8`, `-tb 16`, `-lv 4`, `--spec-type draft-mtp,ngram-mod`, draft K/V `q4_0`, and `--reasoning-preserve`.

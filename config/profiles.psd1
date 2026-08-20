@@ -38,15 +38,15 @@
             '-lv', '4',
 
             '--spec-type', 'draft-mtp,ngram-mod',
-            '--spec-draft-n-max', '2',
-            '--spec-draft-p-min', '0.82',
+            '--spec-draft-n-max', '3',
+            '--spec-draft-p-min', '0.75',
 
             '--spec-draft-type-k', 'q4_0',
             '--spec-draft-type-v', 'q4_0',
 
             '--spec-ngram-mod-n-match', '24',
-            '--spec-ngram-mod-n-min', '48',
-            '--spec-ngram-mod-n-max', '64',
+            '--spec-ngram-mod-n-min', '8',
+            '--spec-ngram-mod-n-max', '32',
 
             '--reasoning-preserve',
 
