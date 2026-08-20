@@ -59,15 +59,21 @@ if (@($config.Profiles['MTP 128k']) -notcontains '--no-mmproj-offload') { throw 
 if (@($config.Profiles['MTP 128k']) -contains '--spec-draft-p-min') { throw 'MTP 128k must not use the old --spec-draft-p-min setting.' }
 
 $tray = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-app.ps1') -Raw
-if ($tray -notmatch 'Get-ProcessTreeIds') { throw 'Tray must capture the llama.cpp process tree before stopping.' }
-if ($tray -notmatch 'Runtime diagnostics') { throw 'Tray must expose runtime diagnostics.' }
-if ($tray -notmatch 'ProfileOrder') { throw 'Tray must respect configured profile order.' }
+foreach ($needle in @('Get-ProcessTreeIds','Runtime diagnostics','ProfileOrder','--metrics','QwenPopupForm')) { if ($tray -notmatch [regex]::Escape($needle)) { throw "Tray missing expected behavior: $needle" } }
+if ($tray -match 'ContextMenuStrip|ToolStripMenuItem') { throw 'Tray must use the custom borderless popup instead of ToolStrip menus.' }
 $theme = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-theme.ps1') -Raw
-if ($theme -match 'Set-QwenRoundedRegion') { throw 'Theme must not use the old clipped Region approach.' }
-if ($theme -notmatch 'QwenDwmMenu') { throw 'Theme must use native DWM menu treatment when available.' }
-if ($theme -notmatch 'OnRenderItemCheck') { throw 'Theme must custom-render checked profile items.' }
+foreach ($needle in @('QwenPopupForm','QwenMenuButton','TextRenderer','DwmSetWindowAttribute')) { if ($theme -notmatch [regex]::Escape($needle)) { throw "Theme missing expected popup primitive: $needle" } }
+if ($theme -match '[^\x00-\x7F]') { throw 'Tray theme must remain ASCII-only for Windows PowerShell 5.1 compatibility.' }
 $diag = Get-Content -LiteralPath (Join-Path $root 'scripts\runtime-diagnostics.ps1') -Raw
-foreach ($needle in @('/health','/slots','last-command.txt','buffer size','tokens per second')) { if ($diag -notmatch [regex]::Escape($needle)) { throw "Diagnostics missing expected signal: $needle" } }
+foreach ($needle in @('/health','/slots','/metrics','/v1/models','GPUProcessMemory','CommittedBytes','KV buffer size','compute buffer size','offload','speculat')) { if ($diag -notmatch [regex]::Escape($needle)) { throw "Diagnostics missing expected signal: $needle" } }
+if ($diag -match '[^\x00-\x7F]') { throw 'Runtime diagnostics must remain ASCII-only for Windows PowerShell 5.1 compatibility.' }
+if ($tray -match '[^\x00-\x7F]') { throw 'Tray app must remain ASCII-only for Windows PowerShell 5.1 compatibility.' }
+
+. (Join-Path $root 'scripts\tray-theme.ps1')
+$smoke = New-QwenPopupForm
+$smokeButton = New-QwenPopupButton 'Smoke test'
+$smoke.Controls.Add($smokeButton)
+$smoke.Dispose()
 
 $iconPath = Join-Path $root 'assets\QwenLocalLauncher.ico'
 if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) { throw 'Missing versioned assets/QwenLocalLauncher.ico.' }
