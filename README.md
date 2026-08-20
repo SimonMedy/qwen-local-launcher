@@ -16,7 +16,7 @@ The default profiles target `unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL`, with Stable 1
 | MTP 128k | 131,072 | `draft-mtp`, max 2, draft K/V `q4_0` | K `q8_0`, V `q4_0` | `-t 8 -tb 16` |
 | Stable 180k | 180,000 | Off | K `q8_0`, V `q4_0` | `-t 8 -tb 16` |
 
-All profiles use `-ngl auto`, Flash Attention, `-np 1`, `--cache-reuse 256`, `--cache-ram 4096`, and the same sampling defaults (`--temp 1.0 --top-p 0.95 --top-k 20 --min-p 0.0 --presence-penalty 0.0 --repeat-penalty 1.0`).
+All profiles use `-ngl auto`, Flash Attention, `-np 1`, `--cache-reuse 256`, `--cache-ram 4096`, and the same sampling defaults (`--temp 1.0 --top-p 0.95 --top-k 20 --min-p 0.0 --presence-penalty 0.0 --repeat-penalty 1.0`). The MTP 128k profile additionally uses `--no-mmproj-offload`: multimodal remains enabled, but the multimodal projector runs on CPU to preserve GPU memory for MTP/context.
 
 ## Launcher features
 
