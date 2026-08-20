@@ -28,7 +28,7 @@ if ($config.DefaultProfile -ne 'Stable 160k') { throw 'Stable 160k must remain t
 if ($config.Profiles.Count -ne 2) { throw 'Exactly two benchmark profiles are expected.' }
 if (-not $config.Profiles.Contains('Stable 160k')) { throw 'Missing Stable 160k profile.' }
 if (-not $config.Profiles.Contains('MTP Tuned')) { throw 'Missing MTP Tuned profile.' }
-if ((@($config.ProfileOrder) -join '|') -ne 'Stable 160kxMTP Tuned') { throw 'ProfileOrder must be Stable 160k then MTP Tuned.' }
+if ((@($config.ProfileOrder) -join '|') -ne 'Stable 160k|MTP Tuned') { throw 'ProfileOrder must be Stable 160k then MTP Tuned.' }
 
 function Assert-ExactProfile {
     param(
