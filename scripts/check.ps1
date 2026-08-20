@@ -23,11 +23,11 @@ foreach ($file in $files) {
 }
 
 $config = Import-PowerShellDataFile -LiteralPath (Join-Path $root 'config\profiles.psd1')
-if ($config.DefaultProfile -ne 'MTP 104K') { throw 'MTP 104K must be the default profile.' }
+if ($config.DefaultProfile -ne 'MTP SPEED') { throw 'MTP SPEED must be the default profile.' }
 if ($config.Profiles.Count -ne 2) { throw 'Exactly two MTP profiles are expected.' }
-if (-not $config.Profiles.Contains('MTP 104K')) { throw 'Missing MTP 104K profile.' }
-if (-not $config.Profiles.Contains('MTP 112K')) { throw 'Missing MTP 112K profile.' }
-if ((@($config.ProfileOrder) -join '|') -ne 'MTP 104K|MTP 112K') { throw 'ProfileOrder must be MTP 104K then MTP 112K.' }
+if (-not $config.Profiles.Contains('MTP SPEED')) { throw 'Missing MTP SPEED profile.' }
+if (-not $config.Profiles.Contains('MTP QUALITY 160K')) { throw 'Missing MTP QUALITY 160K profile.' }
+if ((@($config.ProfileOrder) -join '|') -ne 'MTP SPEED|MTP QUALITY 160K') { throw 'ProfileOrder must be MTP SPEED then MTP QUALITY 160K.' }
 
 function Assert-ExactProfile {
     param(
@@ -45,20 +45,14 @@ function Assert-ExactProfile {
     }
 }
 
-$mtp104Expected = @(
-    '-hf','unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL',
-    '-c','106496',
-    '-ngl','auto',
-    '--fit-target','512',
-    '--cache-type-k','q5_1',
-    '--cache-type-v','q5_1',
+$commonTail = @(
     '--flash-attn','on',
     '--image-min-tokens','1024',
     '--no-mmproj-offload',
     '-np','1',
     '-b','1024',
-    '-ub','128',
-    '--cache-ram','2048',
+    '-ub','512',
+    '--cache-ram','4096',
     '--ctx-checkpoints','64',
     '-t','8',
     '-tb','16',
@@ -80,43 +74,26 @@ $mtp104Expected = @(
     '--repeat-penalty','1.0'
 )
 
-$mtp112Expected = @(
+$speedExpected = @(
     '-hf','unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL',
-    '-c','114688',
+    '-c','73728',
     '-ngl','auto',
-    '--fit-target','512',
     '--cache-type-k','q5_1',
-    '--cache-type-v','q5_1',
-    '--flash-attn','on',
-    '--image-min-tokens','1024',
-    '--no-mmproj-offload',
-    '-np','1',
-    '-b','1024',
-    '-ub','128',
-    '--cache-ram','2048',
-    '--ctx-checkpoints','64',
-    '-t','8',
-    '-tb','16',
-    '-lv','4',
-    '--spec-type','draft-mtp,ngram-mod',
-    '--spec-draft-n-max','3',
-    '--spec-draft-p-min','0.75',
-    '--spec-draft-type-k','q4_0',
-    '--spec-draft-type-v','q4_0',
-    '--spec-ngram-mod-n-match','24',
-    '--spec-ngram-mod-n-min','8',
-    '--spec-ngram-mod-n-max','32',
-    '--reasoning-preserve',
-    '--temp','1.0',
-    '--top-p','0.95',
-    '--top-k','20',
-    '--min-p','0.0',
-    '--presence-penalty','0.0',
-    '--repeat-penalty','1.0'
-)
+    '--cache-type-v','q4_0',
+    '--fit-target','128'
+) + $commonTail
 
-Assert-ExactProfile -Actual @($config.Profiles['MTP 104K']) -Expected $mtp104Expected -Name 'MTP 104K'
-Assert-ExactProfile -Actual @($config.Profiles['MTP 112K']) -Expected $mtp112Expected -Name 'MTP 112K'
+$qualityExpected = @(
+    '-hf','unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL',
+    '-c','163840',
+    '-ngl','auto',
+    '--cache-type-k','q8_0',
+    '--cache-type-v','q4_0',
+    '--fit-target','128'
+) + $commonTail
+
+Assert-ExactProfile -Actual @($config.Profiles['MTP SPEED']) -Expected $speedExpected -Name 'MTP SPEED'
+Assert-ExactProfile -Actual @($config.Profiles['MTP QUALITY 160K']) -Expected $qualityExpected -Name 'MTP QUALITY 160K'
 
 $bootstrap = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-bootstrap.ps1') -Raw
 $tray = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-app.ps1') -Raw
