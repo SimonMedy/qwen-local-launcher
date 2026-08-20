@@ -29,33 +29,33 @@ foreach ($name in @('Stable 160k','MTP 160k','Stable 180k')) {
 }
 
 function Assert-FlagValue {
-    param([object[]]$Args, [string]$Flag, [string]$Expected, [string]$Profile)
-    $index = [Array]::IndexOf($Args, $Flag)
-    if ($index -lt 0 -or $index + 1 -ge $Args.Count -or [string]$Args[$index + 1] -ne $Expected) {
+    param([object[]]$ProfileArgs, [string]$Flag, [string]$Expected, [string]$Profile)
+    $index = [Array]::IndexOf($ProfileArgs, $Flag)
+    if ($index -lt 0 -or $index + 1 -ge $ProfileArgs.Count -or [string]$ProfileArgs[$index + 1] -ne $Expected) {
         throw "Profile '$Profile' must contain $Flag $Expected."
     }
 }
 
 foreach ($name in $config.Profiles.Keys) {
-    $args = @($config.Profiles[$name])
-    if ($args -contains '--no-mmproj') { throw "Profile '$name' disables multimodal support." }
-    if ($args -contains '--fit-target') { throw "Profile '$name' must not use --fit-target." }
-    Assert-FlagValue $args '-hf' 'unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL' $name
-    Assert-FlagValue $args '-ngl' 'auto' $name
-    Assert-FlagValue $args '--cache-type-k' 'q8_0' $name
-    Assert-FlagValue $args '--cache-type-v' 'q4_0' $name
-    Assert-FlagValue $args '--flash-attn' 'on' $name
-    Assert-FlagValue $args '-np' '1' $name
-    Assert-FlagValue $args '--cache-reuse' '256' $name
-    Assert-FlagValue $args '--cache-ram' '4096' $name
-    Assert-FlagValue $args '-t' '8' $name
-    Assert-FlagValue $args '-tb' '16' $name
-    Assert-FlagValue $args '--temp' '1.0' $name
-    Assert-FlagValue $args '--top-p' '0.95' $name
-    Assert-FlagValue $args '--top-k' '20' $name
-    Assert-FlagValue $args '--min-p' '0.0' $name
-    Assert-FlagValue $args '--presence-penalty' '0.0' $name
-    Assert-FlagValue $args '--repeat-penalty' '1.0' $name
+    $profileArgs = @($config.Profiles[$name])
+    if ($profileArgs -contains '--no-mmproj') { throw "Profile '$name' disables multimodal support." }
+    if ($profileArgs -contains '--fit-target') { throw "Profile '$name' must not use --fit-target." }
+    Assert-FlagValue $profileArgs '-hf' 'unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL' $name
+    Assert-FlagValue $profileArgs '-ngl' 'auto' $name
+    Assert-FlagValue $profileArgs '--cache-type-k' 'q8_0' $name
+    Assert-FlagValue $profileArgs '--cache-type-v' 'q4_0' $name
+    Assert-FlagValue $profileArgs '--flash-attn' 'on' $name
+    Assert-FlagValue $profileArgs '-np' '1' $name
+    Assert-FlagValue $profileArgs '--cache-reuse' '256' $name
+    Assert-FlagValue $profileArgs '--cache-ram' '4096' $name
+    Assert-FlagValue $profileArgs '-t' '8' $name
+    Assert-FlagValue $profileArgs '-tb' '16' $name
+    Assert-FlagValue $profileArgs '--temp' '1.0' $name
+    Assert-FlagValue $profileArgs '--top-p' '0.95' $name
+    Assert-FlagValue $profileArgs '--top-k' '20' $name
+    Assert-FlagValue $profileArgs '--min-p' '0.0' $name
+    Assert-FlagValue $profileArgs '--presence-penalty' '0.0' $name
+    Assert-FlagValue $profileArgs '--repeat-penalty' '1.0' $name
 }
 
 Assert-FlagValue @($config.Profiles['Stable 160k']) '-c' '160000' 'Stable 160k'
