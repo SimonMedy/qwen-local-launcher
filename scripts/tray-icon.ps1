@@ -2,6 +2,9 @@
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
+$script:QwenRuntimeOverridesInstalled = $false
+$script:QwenLastSummaryKey = $null
+
 function New-QwenBrandIcon {
     param([Parameter(Mandatory)][string]$IconPath)
     if (-not (Test-Path -LiteralPath $IconPath -PathType Leaf)) { throw "Tray icon not found: $IconPath" }
@@ -14,8 +17,13 @@ function Update-QwenRuntimeSummary {
         $root=Split-Path -Parent $PSScriptRoot; $logDir=Join-Path $root 'logs'
         $latest=Get-ChildItem -LiteralPath $logDir -Filter '*.stderr.log' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
         if (-not $latest) {return}
-        $key="$($latest.FullName)|$($latest.Length)|$($latest.LastWriteTimeUtc.Ticks)"; if ($script:QwenLastSummaryKey -eq $key) {return}
-        $commandPath=Join-Path $logDir 'last-command.txt'; $command=if(Test-Path -LiteralPath $commandPath){(Get-Content -LiteralPath $commandPath -Raw).Trim()}else{'No command recorded.'}
+        $key="$($latest.FullName)|$($latest.Length)|$($latest.LastWriteTimeUtc.Ticks)";if ($script:QwenLastSummaryKey -eq $key) {return}
+        $commandPath = Join-Path $logDir 'last-command.txt'
+        if (Test-Path -LiteralPath $commandPath) {
+            $command = (Get-Content -LiteralPath $commandPath -Raw).Trim()
+        } else {
+            $command = 'No command recorded.'
+        }
         [string[]]$important=@(Select-String -LiteralPath $latest.FullName -Pattern '(?i)offload|buffer size|KV|compute|Vulkan|CUDA|ROCm|HIP|mmproj|mtmd|CLIP|vision|draft|MTP|speculat|n_ctx|cache_reuse|image tokens|prompt eval|eval time|tokens per second|flash' -ErrorAction SilentlyContinue | Select-Object -Last 320 | ForEach-Object {$_.Line})
         $lines=New-Object Collections.Generic.List[string]; $lines.Add("Generated: $(Get-Date -Format o)"); $lines.Add("Source log: $($latest.Name)"); $lines.Add(''); $lines.Add('COMMAND'); $lines.Add($command); $lines.Add(''); $lines.Add('KEY LLAMA.CPP RUNTIME LINES'); if($important.Length -gt 0){foreach($line in $important){$lines.Add($line)}}else{$lines.Add('No matching runtime lines yet.')}
         $lines -join "`r`n" | Set-Content -LiteralPath (Join-Path $logDir 'latest-runtime-summary.txt') -Encoding UTF8; $script:QwenLastSummaryKey=$key
@@ -36,7 +44,7 @@ function Install-QwenRuntimeOverrides {
             if($script:Process){
                 try{$script:Process.Refresh()}catch{}
                 if(-not $script:Process.HasExited){
-                    $rootPid=$script:Process.Id
+                    $rootPid=$script:Procesps.Id
                     try{[int[]]$treeIds=@(Get-ProcessTreeIds -RootPid $rootPid)}catch{Write-TrayRuntimeError $_;[int[]]$treeIds=@($rootPid)}
                     if(Test-AnyProcessAlive $treeIds){$graceful=Invoke-TaskKillSafe -ProcessId $rootPid -Tree;if($graceful.ExitCode -ne 0 -and $graceful.StdErr){Add-Content -LiteralPath (Join-Path $script:LogDir 'tray-runtime-error.log') -Value "[$(Get-Date -Format o)] Graceful taskkill returned $($graceful.ExitCode): $($graceful.StdErr)" -Encoding UTF8};$deadline=(Get-Date).AddSeconds([int]$script:Config.StopTimeoutSeconds);while((Get-Date)-lt $deadline -and (Test-AnyProcessAlive $treeIds)){Start-Sleep -Milliseconds 200}}
                     if(Test-AnyProcessAlive $treeIds){if('QwenServerJob' -as [type]){try{[QwenServerJob]::KillAll()}catch{Write-TrayRuntimeError $_}};$deadline=(Get-Date).AddSeconds(3);while((Get-Date)-lt $deadline -and (Test-AnyProcessAlive $treeIds)){Start-Sleep -Milliseconds 100}}
