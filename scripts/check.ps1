@@ -65,6 +65,9 @@ Assert-FlagValue @($config.Profiles['MTP 128k']) '--spec-type' 'draft-mtp' 'MTP 
 Assert-FlagValue @($config.Profiles['MTP 128k']) '--spec-draft-n-max' '2' 'MTP 128k'
 Assert-FlagValue @($config.Profiles['MTP 128k']) '--spec-draft-type-k' 'q4_0' 'MTP 128k'
 Assert-FlagValue @($config.Profiles['MTP 128k']) '--spec-draft-type-v' 'q4_0' 'MTP 128k'
+if (@($config.Profiles['MTP 128k']) -notcontains '--no-mmproj-offload') { throw 'MTP 128k must keep multimodal enabled while disabling mmproj GPU offload.' }
+if (@($config.Profiles['Stable 160k']) -contains '--no-mmproj-offload') { throw 'Stable 160k should keep mmproj GPU offload enabled.' }
+if (@($config.Profiles['Stable 180k']) -contains '--no-mmproj-offload') { throw 'Stable 180k should keep mmproj GPU offload enabled.' }
 if (@($config.Profiles['MTP 128k']) -contains '--spec-draft-p-min') { throw 'MTP 128k must not use the old --spec-draft-p-min setting.' }
 
 $iconPath = Join-Path $root 'assets\QwenLocalLauncher.ico'

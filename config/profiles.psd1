@@ -38,6 +38,7 @@
             '--cache-type-k', 'q8_0',
             '--cache-type-v', 'q4_0',
             '--flash-attn', 'on',
+            '--no-mmproj-offload',
             '-np', '1',
             '--cache-reuse', '256',
             '--cache-ram', '4096',
