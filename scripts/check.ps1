@@ -60,6 +60,7 @@ Assert-FlagValue @($config.Profiles['MTP 128k']) '--spec-draft-n-max' '2' 'MTP 1
 Assert-FlagValue @($config.Profiles['MTP 128k']) '--spec-draft-type-k' 'q4_0' 'MTP 128k'
 Assert-FlagValue @($config.Profiles['MTP 128k']) '--spec-draft-type-v' 'q4_0' 'MTP 128k'
 if (@($config.Profiles['MTP 128k']) -notcontains '--no-mmproj-offload') { throw 'MTP 128k must keep multimodal enabled while disabling mmproj GPU offload.' }
+if (@($config.Profiles['MTP 128k']) -contains '--spec-draft-p-min') { throw 'MTP 128k must not use the old --spec-draft-p-min setting.' }
 
 $tray = Get-Content -LiteralPath (Join-Path $root 'scripts\tray-app.ps1') -Raw
 foreach ($needle in @('Get-ProcessTreeIds','Invoke-TaskKillSafe','Runtime diagnostics','ProfileOrder','--metrics','QwenPopupForm')) {
@@ -76,7 +77,7 @@ if ($tray -match '[^\x00-\x7F]') { throw 'Tray app must remain ASCII-only for Wi
 
 $diagPath = Join-Path $root 'scripts\runtime-diagnostics.ps1'
 $diag = Get-Content -LiteralPath $diagPath -Raw
-foreach ($needle in @('/health','/slots','/metrics','GPUProcessMemory','CommittedBytes','model buffer size','KV buffer size','compute buffer size','GPU layers','mmproj backend','SelfTest')) {
+foreach ($needle in @('/health','/slots','/metrics','GPUProcessMemory','CommittedBytes','model buffer size','KV buffer size','compute buffer size','GPU layers','mmproj backend','SelfTest','runtime-diagnostics-error.log')) {
     if ($diag -notmatch [regex]::Escape($needle)) { throw "Diagnostics missing expected signal: $needle" }
 }
 if ($diag -match '[^\x00-\x7F]') { throw 'Runtime diagnostics must remain ASCII-only for Windows PowerShell 5.1 compatibility.' }
@@ -87,7 +88,35 @@ $smokeButton = New-QwenPopupButton 'Smoke test'
 $smoke.Controls.Add($smokeButton)
 $smoke.Dispose()
 
-& $diagPath -Root $root -SelfTest
+$diagEscaped = $diagPath.Replace("'", "''")
+$rootEscaped = $root.Replace("'", "''")
+$selfTestScript = @"
+`$culture = [Globalization.CultureInfo]::InvariantCulture.Clone()
+`$culture.NumberFormat.NumberGroupSeparator = ''
+[Threading.Thread]::CurrentThread.CurrentCulture = `$culture
+& '$diagEscaped' -Root '$rootEscaped' -SelfTest
+"@
+$encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($selfTestScript))
+$psi = New-Object Diagnostics.ProcessStartInfo
+$psi.FileName = 'powershell.exe'
+$psi.Arguments = "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $encoded"
+$psi.UseShellExecute = $false
+$psi.CreateNoWindow = $true
+$psi.RedirectStandardOutput = $true
+$psi.RedirectStandardError = $true
+$selfTestProcess = New-Object Diagnostics.Process
+$selfTestProcess.StartInfo = $psi
+[void]$selfTestProcess.Start()
+if (-not $selfTestProcess.WaitForExit(15000)) {
+    try { $selfTestProcess.Kill() } catch {}
+    throw 'Runtime diagnostics self-test timed out.'
+}
+$selfTestStdout = $selfTestProcess.StandardOutput.ReadToEnd()
+$selfTestStderr = $selfTestProcess.StandardError.ReadToEnd()
+$selfTestExit = $selfTestProcess.ExitCode
+$selfTestProcess.Dispose()
+if ($selfTestExit -ne 0) { throw "Runtime diagnostics self-test failed ($selfTestExit). $selfTestStderr $selfTestStdout" }
+if ($selfTestStdout -notmatch 'Runtime diagnostics self-test passed') { throw "Runtime diagnostics self-test did not report success. $selfTestStdout" }
 
 $iconPath = Join-Path $root 'assets\QwenLocalLauncher.ico'
 if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) { throw 'Missing versioned assets/QwenLocalLauncher.ico.' }
