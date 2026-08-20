@@ -35,6 +35,7 @@
 
             '-t', '8',
             '-tb', '16',
+            '-lv', '4',
 
             '--spec-type', 'draft-mtp,ngram-mod',
             '--spec-draft-n-max', '2',
@@ -81,6 +82,7 @@
 
             '-t', '8',
             '-tb', '16',
+            '-lv', '4',
 
             '--spec-type', 'draft-mtp,ngram-mod',
             '--spec-draft-n-max', '3',
